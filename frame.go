@@ -2,15 +2,18 @@ package goframe
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// FromJSON takes a JSON string and a pointer to a struct, populates the struct with the JSON data,
+// ReadJSON takes a JSON string and a pointer to a struct, populates the struct with the JSON data,
 // saves the data into a SQLite in-memory table, and returns a pointer to the database.
 //
 // Parameters:
@@ -45,12 +48,121 @@ import (
 //	    log.Fatalf("Error: %v", err)
 //	}
 //	defer gf.Close()
-func FromJSON(jsonData string, v interface{}) (*sql.DB, error) {
+
+func ReadJSON(jsonData string, v interface{}) (*sql.DB, error) {
 	// Unmarshal the JSON data into the struct
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
 		return nil, err
 	}
 
+	// Populate the struct and save to the database
+	return populateStructAndSaveToDB(v)
+}
+
+// ReadCSV takes a CSV file path and a pointer to a struct, populates the struct with the CSV data,
+// saves the data into a SQLite in-memory table, and returns a pointer to the database.
+//
+// Parameters:
+// - csvFilePath: A string containing the path to the CSV file.
+// - v: A pointer to the struct that will be populated with the CSV data.
+//
+// Returns:
+// - A pointer to the in-memory SQLite database.
+// - An error if any occurs during the process.
+//
+// Example usage:
+//
+//	type Person struct {
+//	    Name      string    `json:"name"`
+//	    Age       int       `json:"age"`
+//	    Salary    float64   `json:"salary"`
+//	    IsMarried bool      `json:"is_married"`
+//	    BirthDate time.Time `json:"birth_date"`
+//	}
+//
+//	csvContent := `name,age,salary,is_married,birth_date
+//	John,30,50000.50,true,1990-01-01T00:00:00Z`
+//	tmpFile, err := os.CreateTemp("", "test.csv")
+//	if err != nil {
+//	    log.Fatalf("Error: %v", err)
+//	}
+//	defer os.Remove(tmpFile.Name())
+//
+//	if _, err := tmpFile.WriteString(csvContent); err != nil {
+//	    log.Fatalf("Error: %v", err)
+//	}
+//	tmpFile.Close()
+//
+//	var person Person
+//	gf, err := ReadCSV(tmpFile.Name(), &person)
+//	if err != nil {
+//	    log.Fatalf("Error: %v", err)
+//	}
+//	defer gf.Close()
+//
+//	fmt.Printf("Name: %s\n", person.Name)
+//	fmt.Printf("Age: %d\n", person.Age)
+//	fmt.Printf("Salary: %.2f\n", person.Salary)
+//	fmt.Printf("IsMarried: %t\n", person.IsMarried)
+//	fmt.Printf("BirthDate: %s\n", person.BirthDate.Format(time.RFC3339))
+func ReadCSV(csvFilePath string, v interface{}) (*sql.DB, error) {
+	file, err := os.Open(csvFilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	// Assuming the first row contains headers and the second row contains data
+	if len(records) < 2 {
+		return nil, fmt.Errorf("CSV file does not contain enough data")
+	}
+
+	headers := records[0]
+	data := records[1]
+
+	val := reflect.ValueOf(v).Elem()
+	typ := val.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		for j, header := range headers {
+			if field.Tag.Get("json") == header {
+				fieldValue := val.Field(i)
+				switch fieldValue.Kind() {
+				case reflect.String:
+					fieldValue.SetString(data[j])
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+					intValue, _ := strconv.ParseInt(data[j], 10, 64)
+					fieldValue.SetInt(intValue)
+				case reflect.Float32, reflect.Float64:
+					floatValue, _ := strconv.ParseFloat(data[j], 64)
+					fieldValue.SetFloat(floatValue)
+				case reflect.Bool:
+					boolValue, _ := strconv.ParseBool(data[j])
+					fieldValue.SetBool(boolValue)
+				case reflect.Struct:
+					if fieldValue.Type() == reflect.TypeOf(time.Time{}) {
+						timeValue, _ := time.Parse(time.RFC3339, data[j])
+						fieldValue.Set(reflect.ValueOf(timeValue))
+					}
+				}
+			}
+		}
+	}
+
+	// Populate the struct and save to the database
+	return populateStructAndSaveToDB(v)
+}
+
+// populateStructAndSaveToDB takes a pointer to a struct, creates a SQLite in-memory table,
+// saves the data into the table, and returns a pointer to the database.
+func populateStructAndSaveToDB(v interface{}) (*sql.DB, error) {
 	// Create an in-memory SQLite database
 	gf, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {

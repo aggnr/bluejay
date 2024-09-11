@@ -1,11 +1,12 @@
 package goframe
 
 import (
+	"os"
 	"testing"
 	"time"
 )
 
-func TestFromJSON(t *testing.T) {
+func TestReadJSON(t *testing.T) {
 	type Person struct {
 		Name      string    `json:"name"`
 		Age       int       `json:"age"`
@@ -22,7 +23,7 @@ func TestFromJSON(t *testing.T) {
 	}`
 	var person Person
 
-	gf, err := FromJSON(jsonStr, &person)
+	gf, err := ReadJSON(jsonStr, &person)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -45,6 +46,85 @@ func TestFromJSON(t *testing.T) {
 	}
 	if person.IsMarried != expectedIsMarried {
 		t.Errorf("Expected is_married %v, got %v", expectedIsMarried, person.IsMarried)
+	}
+
+	// Verify the data in the SQLite table
+	var name string
+	var age int
+	var salary float64
+	var isMarried bool
+	var birthDateStr string
+	row := gf.QueryRow("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
+	if err := row.Scan(&name, &age, &salary, &isMarried, &birthDateStr); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if name != expectedName {
+		t.Errorf("Expected name %v in database, got %v", expectedName, name)
+	}
+	if age != expectedAge {
+		t.Errorf("Expected age %v in database, got %v", expectedAge, age)
+	}
+	if salary != expectedSalary {
+		t.Errorf("Expected salary %v in database, got %v", expectedSalary, salary)
+	}
+	if isMarried != expectedIsMarried {
+		t.Errorf("Expected is_married %v in database, got %v", expectedIsMarried, isMarried)
+	}
+}
+
+func TestReadCSV(t *testing.T) {
+	type Person struct {
+		Name      string    `json:"name"`
+		Age       int       `json:"age"`
+		Salary    float64   `json:"salary"`
+		IsMarried bool      `json:"is_married"`
+		BirthDate time.Time `json:"birth_date"`
+	}
+
+	// Create a temporary CSV file
+	csvContent := `name,age,salary,is_married,birth_date
+John,30,50000.50,true,1990-01-01T00:00:00Z`
+	tmpFile, err := os.CreateTemp("", "test.csv")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(csvContent); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	tmpFile.Close()
+
+	var person Person
+
+	gf, err := ReadCSV(tmpFile.Name(), &person)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer gf.Close()
+
+	// Verify the struct fields
+	expectedName := "John"
+	expectedAge := 30
+	expectedSalary := 50000.50
+	expectedIsMarried := true
+	expectedBirthDate, _ := time.Parse(time.RFC3339, "1990-01-01T00:00:00Z")
+
+	if person.Name != expectedName {
+		t.Errorf("Expected name %v, got %v", expectedName, person.Name)
+	}
+	if person.Age != expectedAge {
+		t.Errorf("Expected age %v, got %v", expectedAge, person.Age)
+	}
+	if person.Salary != expectedSalary {
+		t.Errorf("Expected salary %v, got %v", expectedSalary, person.Salary)
+	}
+	if person.IsMarried != expectedIsMarried {
+		t.Errorf("Expected is_married %v, got %v", expectedIsMarried, person.IsMarried)
+	}
+	if !person.BirthDate.Equal(expectedBirthDate) {
+		t.Errorf("Expected birth_date %v, got %v", expectedBirthDate, person.BirthDate)
 	}
 
 	// Verify the data in the SQLite table

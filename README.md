@@ -1,2 +1,2 @@
 # goframe
-Go Data Analysis Library
+Goframe is an open-source data analysis library designed to facilitate the handling and analysis of data.
