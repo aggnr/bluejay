@@ -22,7 +22,7 @@ import (
 // - v: A pointer to the struct that will be populated with the JSON data.
 //
 // Returns:
-// - A pointer to the in-memory SQLite database.
+// - A DataFrame.
 // - An error if any occurs during the process.
 //
 // Example usage:
@@ -49,7 +49,7 @@ import (
 //	    log.Fatalf("Error: %v", err)
 //	}
 //	defer gf.Close()
-func ReadJSONFromString(jsonData string, v interface{}) (*sql.DB, error) {
+func ReadJSONFromString(jsonData string, v interface{}) (*DataFrame, error) {
 	// Unmarshal the JSON data into the struct
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
 		return nil, err
@@ -67,9 +67,9 @@ func ReadJSONFromString(jsonData string, v interface{}) (*sql.DB, error) {
 // - v: A pointer to the struct that will be populated with the JSON data.
 //
 // Returns:
-// - A pointer to the in-memory SQLite database.
+// - A DataFrame.
 // - An error if any occurs during the process.
-func ReadJSONFromFile(jsonFilePath string, v interface{}) (*sql.DB, error) {
+func ReadJSONFromFile(jsonFilePath string, v interface{}) (*DataFrame, error) {
 	file, err := os.Open(jsonFilePath)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func ReadJSONFromFile(jsonFilePath string, v interface{}) (*sql.DB, error) {
 // - v: A pointer to the struct that will be populated with the CSV data.
 //
 // Returns:
-// - A pointer to the in-memory SQLite database.
+// - A DataFrame.
 // - An error if any occurs during the process.
 //
 // Example usage:
@@ -139,7 +139,7 @@ func ReadJSONFromFile(jsonFilePath string, v interface{}) (*sql.DB, error) {
 //	fmt.Printf("Salary: %.2f\n", person.Salary)
 //	fmt.Printf("IsMarried: %t\n", person.IsMarried)
 //	fmt.Printf("BirthDate: %s\n", person.BirthDate.Format(time.RFC3339))
-func ReadCSVFromFile(csvFilePath string, v interface{}) (*sql.DB, error) {
+func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
 		return nil, err
@@ -171,9 +171,9 @@ func ReadCSVFromFile(csvFilePath string, v interface{}) (*sql.DB, error) {
 // - v: A pointer to the struct that will be populated with the CSV data.
 //
 // Returns:
-// - A pointer to the in-memory SQLite database.
+// - A DataFrame.
 // - An error if any occurs during the process.
-func ReadCSVFromString(csvData string, v interface{}) (*sql.DB, error) {
+func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 	reader := csv.NewReader(strings.NewReader(csvData))
 	records, err := reader.ReadAll()
 	if err != nil {
@@ -223,8 +223,8 @@ func ReadCSVFromString(csvData string, v interface{}) (*sql.DB, error) {
 }
 
 // populateStructAndSaveToDB takes a pointer to a struct, creates a SQLite in-memory table,
-// saves the data into the table, and returns a pointer to the database.
-func populateStructAndSaveToDB(v interface{}) (*sql.DB, error) {
+// saves the data into the table, and returns a DataFrame.
+func populateStructAndSaveToDB(v interface{}) (*DataFrame, error) {
 	// Create an in-memory SQLite database
 	gf, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -294,18 +294,18 @@ func populateStructAndSaveToDB(v interface{}) (*sql.DB, error) {
 		return nil, err
 	}
 
-	return gf, nil
+	return &DataFrame{DB: gf}, nil
 }
 
-// WriteCSVToFile takes a file path and a pointer to a struct, and writes the struct data to the CSV file.
+// ToCSV writes the contents of a DataFrame to a CSV file.
 //
 // Parameters:
-// - csvFilePath: A string containing the path to the CSV file.
-// - v: A pointer to the struct that will be written to the CSV file.
+// - csvFilePath: The path to the CSV file.
 //
 // Returns:
 // - An error if any occurs during the process.
-func WriteCSVToFile(csvFilePath string, v interface{}) error {
+func (df *DataFrame) ToCSV(csvFilePath string, v interface{}) error {
+	// Open the CSV file for writing
 	file, err := os.Create(csvFilePath)
 	if err != nil {
 		return err
@@ -315,27 +315,63 @@ func WriteCSVToFile(csvFilePath string, v interface{}) error {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	val := reflect.ValueOf(v).Elem()
-	typ := val.Type()
-
-	// Write the header
-	var headers []string
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		headers = append(headers, field.Tag.Get("json"))
+	// Get the table name and columns
+	tableName := reflect.TypeOf(v).Elem().Name()
+	rows, err := df.QueryRows("SELECT * FROM " + tableName)
+	if err != nil {
+		return err
 	}
-	if err := writer.Write(headers); err != nil {
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
 		return err
 	}
 
-	// Write the data
-	var record []string
-	for i := 0; i < typ.NumField(); i++ {
-		fieldValue := val.Field(i)
-		record = append(record, fmt.Sprintf("%v", fieldValue.Interface()))
-	}
-	if err := writer.Write(record); err != nil {
+	// Write the header row
+	if err := writer.Write(columns); err != nil {
 		return err
+	}
+
+	// Write the data rows
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return err
+		}
+
+		record := make([]string, len(columns))
+		for i, val := range values {
+			if val != nil {
+				switch v := val.(type) {
+				case int64:
+					record[i] = strconv.FormatInt(v, 10)
+				case float64:
+					record[i] = strconv.FormatFloat(v, 'f', -1, 64)
+				case bool:
+					record[i] = strconv.FormatBool(v)
+				case time.Time:
+					record[i] = v.Format(time.RFC3339)
+				case []byte:
+					record[i] = string(v)
+				case string:
+					record[i] = v
+				default:
+					record[i] = fmt.Sprintf("%v", v)
+				}
+			} else {
+				record[i] = ""
+			}
+		}
+
+		if err := writer.Write(record); err != nil {
+			return err
+		}
 	}
 
 	return nil

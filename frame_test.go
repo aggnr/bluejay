@@ -1,6 +1,7 @@
 package goframe
 
 import (
+	"encoding/csv"
 	"os"
 	"reflect"
 	"testing"
@@ -55,7 +56,7 @@ func TestReadJSON(t *testing.T) {
 	var salary float64
 	var isMarried bool
 	var birthDateStr string
-	row := gf.QueryRow("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
+	row := gf.Query("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
 	if err := row.Scan(&name, &age, &salary, &isMarried, &birthDateStr); err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -139,7 +140,7 @@ func TestReadJSONFromFile(t *testing.T) {
 	var salary float64
 	var isMarried bool
 	var birthDateStr string
-	row := gf.QueryRow("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
+	row := gf.Query("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
 	if err := row.Scan(&name, &age, &salary, &isMarried, &birthDateStr); err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -215,7 +216,7 @@ John,30,50000.50,true,1990-01-01T00:00:00Z`
 	var salary float64
 	var isMarried bool
 	var birthDateStr string
-	row := gf.QueryRow("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
+	row := gf.Query("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
 	if err := row.Scan(&name, &age, &salary, &isMarried, &birthDateStr); err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -284,7 +285,7 @@ John,30,50000.50,true,1990-01-01T00:00:00Z`
 	var salary float64
 	var isMarried bool
 	var birthDateStr string
-	row := gf.QueryRow("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
+	row := gf.Query("SELECT Name, Age, Salary, IsMarried, BirthDate FROM Person")
 	if err := row.Scan(&name, &age, &salary, &isMarried, &birthDateStr); err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -304,7 +305,7 @@ John,30,50000.50,true,1990-01-01T00:00:00Z`
 
 }
 
-func TestWriteCSVToFile(t *testing.T) {
+func TestToCSV(t *testing.T) {
 	type Person struct {
 		Name      string  `json:"name"`
 		Age       int     `json:"age"`
@@ -312,12 +313,20 @@ func TestWriteCSVToFile(t *testing.T) {
 		IsMarried bool    `json:"is_married"`
 	}
 
+	// Create a sample struct and populate it with data
 	person := Person{
 		Name:      "John",
 		Age:       30,
 		Salary:    50000.50,
 		IsMarried: true,
 	}
+
+	// Create a DataFrame
+	df, err := populateStructAndSaveToDB(&person)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer df.Close()
 
 	// Create a temporary CSV file
 	tmpFile, err := os.CreateTemp("", "test.csv")
@@ -326,8 +335,8 @@ func TestWriteCSVToFile(t *testing.T) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	// Write the struct to the CSV file
-	if err := WriteCSVToFile(tmpFile.Name(), &person); err != nil {
+	// Write the DataFrame to the CSV file
+	if err := df.ToCSV(tmpFile.Name(), &person); err != nil { // Pass the person struct here
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
@@ -338,15 +347,21 @@ func TestWriteCSVToFile(t *testing.T) {
 	}
 	defer file.Close()
 
-	var readPerson Person
-	gf, err := ReadCSVFromFile(tmpFile.Name(), &readPerson)
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	defer gf.Close()
 
-	// Verify the struct fields
-	if !reflect.DeepEqual(person, readPerson) {
-		t.Errorf("Expected %v, got %v", person, readPerson)
+	// Verify the header row
+	expectedHeaders := []string{"Name", "Age", "Salary", "IsMarried"}
+	if !reflect.DeepEqual(records[0], expectedHeaders) {
+		t.Errorf("Expected headers %v, got %v", expectedHeaders, records[0])
+	}
+
+	// Verify the data row
+	expectedData := []string{"John", "30", "50000.5", "true"}
+	if !reflect.DeepEqual(records[1], expectedData) {
+		t.Errorf("Expected data %v, got %v", expectedData, records[1])
 	}
 }
