@@ -2,6 +2,7 @@ package goframe
 
 import (
 	"os"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -301,4 +302,51 @@ John,30,50000.50,true,1990-01-01T00:00:00Z`
 		t.Errorf("Expected is_married %v in database, got %v", expectedIsMarried, isMarried)
 	}
 
+}
+
+func TestWriteCSVToFile(t *testing.T) {
+	type Person struct {
+		Name      string  `json:"name"`
+		Age       int     `json:"age"`
+		Salary    float64 `json:"salary"`
+		IsMarried bool    `json:"is_married"`
+	}
+
+	person := Person{
+		Name:      "John",
+		Age:       30,
+		Salary:    50000.50,
+		IsMarried: true,
+	}
+
+	// Create a temporary CSV file
+	tmpFile, err := os.CreateTemp("", "test.csv")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Write the struct to the CSV file
+	if err := WriteCSVToFile(tmpFile.Name(), &person); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Read the CSV file and verify its contents
+	file, err := os.Open(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer file.Close()
+
+	var readPerson Person
+	gf, err := ReadCSVFromFile(tmpFile.Name(), &readPerson)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer gf.Close()
+
+	// Verify the struct fields
+	if !reflect.DeepEqual(person, readPerson) {
+		t.Errorf("Expected %v, got %v", person, readPerson)
+	}
 }

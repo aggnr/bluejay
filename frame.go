@@ -296,3 +296,47 @@ func populateStructAndSaveToDB(v interface{}) (*sql.DB, error) {
 
 	return gf, nil
 }
+
+// WriteCSVToFile takes a file path and a pointer to a struct, and writes the struct data to the CSV file.
+//
+// Parameters:
+// - csvFilePath: A string containing the path to the CSV file.
+// - v: A pointer to the struct that will be written to the CSV file.
+//
+// Returns:
+// - An error if any occurs during the process.
+func WriteCSVToFile(csvFilePath string, v interface{}) error {
+	file, err := os.Create(csvFilePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	val := reflect.ValueOf(v).Elem()
+	typ := val.Type()
+
+	// Write the header
+	var headers []string
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		headers = append(headers, field.Tag.Get("json"))
+	}
+	if err := writer.Write(headers); err != nil {
+		return err
+	}
+
+	// Write the data
+	var record []string
+	for i := 0; i < typ.NumField(); i++ {
+		fieldValue := val.Field(i)
+		record = append(record, fmt.Sprintf("%v", fieldValue.Interface()))
+	}
+	if err := writer.Write(record); err != nil {
+		return err
+	}
+
+	return nil
+}
