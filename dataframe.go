@@ -1,6 +1,11 @@
 package goframe
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+	"reflect"
+	"strings"
+)
 
 // DataFrame is a wrapper type over the SQLite database connection.
 type DataFrame struct {
@@ -62,4 +67,48 @@ func (r *Rows) Scan(dest ...any) error {
 // Close wraps the underlying sql.Rows.Close method.
 func (r *Rows) Close() error {
 	return r.rows.Close()
+}
+
+// getTableNameAndColumns infers the table name and column names from the struct type
+func getTableNameAndColumns(v interface{}) (string, []string) {
+	typ := reflect.TypeOf(v).Elem()
+	tableName := typ.Name()
+	columns := make([]string, typ.NumField())
+	for i := 0; i < typ.NumField(); i++ {
+		columns[i] = typ.Field(i).Name
+	}
+	return tableName, columns
+}
+
+// Insert method for DataFrame
+func (df *DataFrame) Insert(v interface{}, values []interface{}) error {
+	tableName, columns := getTableNameAndColumns(v)
+	placeholders := make([]string, len(values))
+	for i := range placeholders {
+		placeholders[i] = "?"
+	}
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, strings.Join(columns, ", "), strings.Join(placeholders, ", "))
+	_, err := df.DB.Exec(query, values...)
+	return err
+}
+
+// Update method for DataFrame
+func (df *DataFrame) Update(v interface{}, values []interface{}, condition string, conditionArgs []interface{}) error {
+	tableName, columns := getTableNameAndColumns(v)
+	setClauses := make([]string, len(columns))
+	for i, col := range columns {
+		setClauses[i] = fmt.Sprintf("%s = ?", col)
+	}
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", tableName, strings.Join(setClauses, ", "), condition)
+	args := append(values, conditionArgs...)
+	_, err := df.DB.Exec(query, args...)
+	return err
+}
+
+// Delete method for DataFrame
+func (df *DataFrame) Delete(v interface{}, condition string, conditionArgs []interface{}) error {
+	tableName, _ := getTableNameAndColumns(v)
+	query := fmt.Sprintf("DELETE FROM %s WHERE %s", tableName, condition)
+	_, err := df.DB.Exec(query, conditionArgs...)
+	return err
 }

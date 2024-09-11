@@ -280,20 +280,6 @@ func populateStructAndSaveToDB(v interface{}) (*DataFrame, error) {
 		return nil, err
 	}
 
-	// Insert the data into the table
-	insertQuery := fmt.Sprintf("INSERT INTO %s VALUES (", tableName)
-	values := make([]interface{}, typ.NumField())
-	for i := 0; i < typ.NumField(); i++ {
-		insertQuery += "?,"
-		values[i] = val.Field(i).Interface()
-	}
-	insertQuery = insertQuery[:len(insertQuery)-1] + ");"
-
-	// Execute the insert query
-	if _, err := gf.Exec(insertQuery, values...); err != nil {
-		return nil, err
-	}
-
 	return &DataFrame{DB: gf}, nil
 }
 
