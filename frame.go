@@ -8,12 +8,13 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// ReadJSON takes a JSON string and a pointer to a struct, populates the struct with the JSON data,
+// ReadJSONFromString takes a JSON string and a pointer to a struct, populates the struct with the JSON data,
 // saves the data into a SQLite in-memory table, and returns a pointer to the database.
 //
 // Parameters:
@@ -49,7 +50,7 @@ import (
 //	}
 //	defer gf.Close()
 
-func ReadJSON(jsonData string, v interface{}) (*sql.DB, error) {
+func ReadJSONFromString(jsonData string, v interface{}) (*sql.DB, error) {
 	// Unmarshal the JSON data into the struct
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
 		return nil, err
@@ -59,7 +60,41 @@ func ReadJSON(jsonData string, v interface{}) (*sql.DB, error) {
 	return populateStructAndSaveToDB(v)
 }
 
-// ReadCSV takes a CSV file path and a pointer to a struct, populates the struct with the CSV data,
+// ReadJSONFromFile takes a JSON file path and a pointer to a struct, reads the JSON data from the file,
+// populates the struct with the JSON data, saves the data into a SQLite in-memory table, and returns a pointer to the database.
+//
+// Parameters:
+// - jsonFilePath: A string containing the path to the JSON file.
+// - v: A pointer to the struct that will be populated with the JSON data.
+//
+// Returns:
+// - A pointer to the in-memory SQLite database.
+// - An error if any occurs during the process.
+func ReadJSONFromFile(jsonFilePath string, v interface{}) (*sql.DB, error) {
+	file, err := os.Open(jsonFilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	fileSize := fileInfo.Size()
+	buffer := make([]byte, fileSize)
+
+	_, err = file.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonData := string(buffer)
+	return ReadJSONFromString(jsonData, v)
+}
+
+// ReadCSVFromFile takes a CSV file path and a pointer to a struct, populates the struct with the CSV data,
 // saves the data into a SQLite in-memory table, and returns a pointer to the database.
 //
 // Parameters:
@@ -105,14 +140,43 @@ func ReadJSON(jsonData string, v interface{}) (*sql.DB, error) {
 //	fmt.Printf("Salary: %.2f\n", person.Salary)
 //	fmt.Printf("IsMarried: %t\n", person.IsMarried)
 //	fmt.Printf("BirthDate: %s\n", person.BirthDate.Format(time.RFC3339))
-func ReadCSV(csvFilePath string, v interface{}) (*sql.DB, error) {
+
+func ReadCSVFromFile(csvFilePath string, v interface{}) (*sql.DB, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	fileSize := fileInfo.Size()
+	buffer := make([]byte, fileSize)
+
+	_, err = file.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	csvData := string(buffer)
+	return ReadCSVFromString(csvData, v)
+}
+
+// ReadCSVFromString takes a CSV string and a pointer to a struct, populates the struct with the CSV data,
+// saves the data into a SQLite in-memory table, and returns a pointer to the database.
+//
+// Parameters:
+// - csvData: A string containing the CSV data.
+// - v: A pointer to the struct that will be populated with the CSV data.
+//
+// Returns:
+// - A pointer to the in-memory SQLite database.
+// - An error if any occurs during the process.
+func ReadCSVFromString(csvData string, v interface{}) (*sql.DB, error) {
+	reader := csv.NewReader(strings.NewReader(csvData))
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, err
@@ -120,7 +184,7 @@ func ReadCSV(csvFilePath string, v interface{}) (*sql.DB, error) {
 
 	// Assuming the first row contains headers and the second row contains data
 	if len(records) < 2 {
-		return nil, fmt.Errorf("CSV file does not contain enough data")
+		return nil, fmt.Errorf("CSV data does not contain enough data")
 	}
 
 	headers := records[0]
