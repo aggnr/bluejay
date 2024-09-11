@@ -49,7 +49,6 @@ import (
 //	    log.Fatalf("Error: %v", err)
 //	}
 //	defer gf.Close()
-
 func ReadJSONFromString(jsonData string, v interface{}) (*sql.DB, error) {
 	// Unmarshal the JSON data into the struct
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
@@ -140,7 +139,6 @@ func ReadJSONFromFile(jsonFilePath string, v interface{}) (*sql.DB, error) {
 //	fmt.Printf("Salary: %.2f\n", person.Salary)
 //	fmt.Printf("IsMarried: %t\n", person.IsMarried)
 //	fmt.Printf("BirthDate: %s\n", person.BirthDate.Format(time.RFC3339))
-
 func ReadCSVFromFile(csvFilePath string, v interface{}) (*sql.DB, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
