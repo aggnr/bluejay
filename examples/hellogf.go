@@ -1,3 +1,4 @@
+// This example demonstrates how to create a DataFrame from a slice of structs.
 //go:build ignoreme
 // +build ignoreme
 

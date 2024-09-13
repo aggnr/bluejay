@@ -1,3 +1,4 @@
+// Description: This example demonstrates how to retrieve rows from a DataFrame using the Loc method.
 //go:build ignoreme
 // +build ignoreme
 

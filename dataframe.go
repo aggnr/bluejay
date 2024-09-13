@@ -209,3 +209,238 @@ func (df *DataFrame) Loc(indices ...int) ([]map[string]interface{}, error) {
 
 	return result, nil
 }
+
+// Head method returns the top n rows, defaulting to 5
+func (df *DataFrame) Head(n ...int) ([]map[string]interface{}, error) {
+	rows := 5 // default number of rows
+	if len(n) > 0 {
+		rows = n[0]
+	}
+
+	tableName := df.StructType.Name()
+	query := fmt.Sprintf("SELECT * FROM %s LIMIT %d", tableName, rows)
+
+	resultRows, err := df.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer resultRows.Close()
+
+	columns, err := resultRows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for resultRows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := resultRows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range columns {
+			row[col] = values[i]
+		}
+
+		result = append(result, row)
+	}
+
+	return result, nil
+}
+
+// Display method prints the top n rows in tabular format, defaulting to 5
+func (df *DataFrame) Display(n ...int) error {
+	rows := 5 // default number of rows
+	if len(n) > 0 {
+		rows = n[0]
+	}
+
+	tableName := df.StructType.Name()
+	query := fmt.Sprintf("SELECT * FROM %s LIMIT %d", tableName, rows)
+
+	resultRows, err := df.DB.Query(query)
+	if err != nil {
+		return err
+	}
+	defer resultRows.Close()
+
+	columns, err := resultRows.Columns()
+	if err != nil {
+		return err
+	}
+
+	// Print column names
+	fmt.Println(strings.Join(columns, "\t"))
+
+	// Print rows
+	for resultRows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := resultRows.Scan(valuePtrs...); err != nil {
+			return err
+		}
+
+		row := make([]string, len(columns))
+		for i, _ := range columns {
+			row[i] = fmt.Sprintf("%v", values[i])
+		}
+
+		fmt.Println(strings.Join(row, "\t"))
+	}
+
+	return nil
+}
+
+// Tail method returns the bottom n rows, defaulting to 5
+func (df *DataFrame) Tail(n ...int) ([]map[string]interface{}, error) {
+	rows := 5 // default number of rows
+	if len(n) > 0 {
+		rows = n[0]
+	}
+
+	tableName := df.StructType.Name()
+	query := fmt.Sprintf("SELECT * FROM %s ORDER BY ROWID DESC LIMIT %d", tableName, rows)
+
+	resultRows, err := df.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer resultRows.Close()
+
+	columns, err := resultRows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for resultRows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := resultRows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range columns {
+			row[col] = values[i]
+		}
+
+		result = append(result, row)
+	}
+
+	// Reverse the result to maintain the original order
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+
+	return result, nil
+}
+
+// Info method returns and prints details about the DataFrame
+func (df *DataFrame) Info() error {
+	// Get column names and types
+	columns, err := df.DB.Query(fmt.Sprintf("PRAGMA table_info(%s)", df.StructType.Name()))
+	if err != nil {
+		return err
+	}
+	defer columns.Close()
+
+	var columnNames []string
+	var columnTypes []string
+	for columns.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, dflt_value, pk interface{}
+		if err := columns.Scan(&cid, &name, &ctype, &notnull, &dflt_value, &pk); err != nil {
+			return err
+		}
+		columnNames = append(columnNames, name)
+		columnTypes = append(columnTypes, ctype)
+	}
+
+	// Print column names and types
+	fmt.Println("Column Names:", columnNames)
+	fmt.Println("Column Types:", columnTypes)
+
+	// Get number of rows
+	rowCount := 0
+	rowQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", df.StructType.Name())
+	err = df.DB.QueryRow(rowQuery).Scan(&rowCount)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Number of Rows:", rowCount)
+
+	// Get number of null and non-null values, and range for numeric columns
+	nullCounts := make(map[string]int)
+	nonNullCounts := make(map[string]int)
+	ranges := make(map[string][2]interface{})
+
+	for i, col := range columnNames {
+		nullQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s IS NULL", df.StructType.Name(), col)
+		nonNullQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s IS NOT NULL", df.StructType.Name(), col)
+		var nullCount, nonNullCount int
+
+		err = df.DB.QueryRow(nullQuery).Scan(&nullCount)
+		if err != nil {
+			return err
+		}
+		err = df.DB.QueryRow(nonNullQuery).Scan(&nonNullCount)
+		if err != nil {
+			return err
+		}
+
+		nullCounts[col] = nullCount
+		nonNullCounts[col] = nonNullCount
+
+		// Check if column is numeric and get range
+		if isNumericType(columnTypes[i]) {
+			minQuery := fmt.Sprintf("SELECT MIN(%s) FROM %s", col, df.StructType.Name())
+			maxQuery := fmt.Sprintf("SELECT MAX(%s) FROM %s", col, df.StructType.Name())
+			var min, max interface{}
+
+			err = df.DB.QueryRow(minQuery).Scan(&min)
+			if err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			err = df.DB.QueryRow(maxQuery).Scan(&max)
+			if err != nil && err != sql.ErrNoRows {
+				return err
+			}
+
+			ranges[col] = [2]interface{}{min, max}
+		}
+	}
+
+	// Print null and non-null counts
+	fmt.Println("Null Counts:", nullCounts)
+	fmt.Println("Non-Null Counts:", nonNullCounts)
+	fmt.Println("Ranges for Numeric Columns:", ranges)
+
+	return nil
+}
+
+// Helper function to check if a column type is numeric
+func isNumericType(ctype string) bool {
+	numericTypes := []string{"INTEGER", "REAL", "FLOAT", "DOUBLE"}
+	for _, t := range numericTypes {
+		if ctype == t {
+			return true
+		}
+	}
+	return false
+}

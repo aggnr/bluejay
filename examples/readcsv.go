@@ -1,3 +1,4 @@
+// This example demonstrates how to read a CSV string into a DataFrame.
 //go:build ignoreme
 // +build ignoreme
 
