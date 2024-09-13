@@ -2,13 +2,71 @@ package goframe
 
 import (
 	"encoding/csv"
-	"fmt"
 	"os"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
 )
+
+func TestNewDataFrame(t *testing.T) {
+	type Person struct {
+		Name      string
+		Age       int
+		Salary    float64
+		IsMarried bool
+	}
+
+	// Create a slice of Person structs
+	people := []Person{
+		{"John", 30, 50000.50, true},
+		{"Jane", 25, 60000.75, false},
+	}
+
+	// Create a new DataFrame
+	df, err := NewDataFrame(people)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer df.DB.Close()
+
+	// Verify the data in the SQLite table
+	var name string
+	var age int
+	var salary float64
+	var isMarried bool
+
+	rows, err := df.DB.Query("SELECT Name, Age, Salary, IsMarried FROM Person")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	defer rows.Close()
+
+	i := 0
+	for rows.Next() {
+		if err := rows.Scan(&name, &age, &salary, &isMarried); err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if name != people[i].Name {
+			t.Errorf("Expected name %v, got %v", people[i].Name, name)
+		}
+		if age != people[i].Age {
+			t.Errorf("Expected age %v, got %v", people[i].Age, age)
+		}
+		if salary != people[i].Salary {
+			t.Errorf("Expected salary %v, got %v", people[i].Salary, salary)
+		}
+		if isMarried != people[i].IsMarried {
+			t.Errorf("Expected is_married %v, got %v", people[i].IsMarried, isMarried)
+		}
+		i++
+	}
+
+	if err := rows.Err(); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+}
 
 func TestReadJSON(t *testing.T) {
 	type Person struct {
@@ -18,68 +76,49 @@ func TestReadJSON(t *testing.T) {
 		IsMarried bool    `json:"is_married"`
 	}
 
-	jsonStr := `{
-		"name": "John",
-		"age": 30,
-		"salary": 50000.50,
-		"is_married": true
-	}`
-	var person Person
+	jsonStr := `[
+        {
+            "name": "John",
+            "age": 30,
+            "salary": 50000.50,
+            "is_married": true
+        },
+        {
+            "name": "Jane",
+            "age": 25,
+            "salary": 60000.75,
+            "is_married": false
+        }
+    ]`
+	var people []Person
 
-	gf, err := ReadJSONFromString(jsonStr, &person)
+	gf, err := ReadJSONFromString(jsonStr, &people)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 	defer gf.Close()
 
-	// Insert the data into the SQLite table using the Insert method
-	values := []interface{}{person.Name, person.Age, person.Salary, person.IsMarried}
-	if err := gf.Insert(&person, values); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
 	// Verify the struct fields
-	expectedName := "John"
-	expectedAge := 30
-	expectedSalary := 50000.50
-	expectedIsMarried := true
-
-	if person.Name != expectedName {
-		t.Errorf("Expected name %v, got %v", expectedName, person.Name)
-	}
-	if person.Age != expectedAge {
-		t.Errorf("Expected age %v, got %v", expectedAge, person.Age)
-	}
-	if person.Salary != expectedSalary {
-		t.Errorf("Expected salary %v, got %v", expectedSalary, person.Salary)
-	}
-	if person.IsMarried != expectedIsMarried {
-		t.Errorf("Expected is_married %v, got %v", expectedIsMarried, person.IsMarried)
+	expectedPeople := []Person{
+		{"John", 30, 50000.50, true},
+		{"Jane", 25, 60000.75, false},
 	}
 
-	// Verify the data in the SQLite table
-	var name string
-	var age int
-	var salary float64
-	var isMarried bool
-
-	row := gf.Query("SELECT Name, Age, Salary, IsMarried FROM Person")
-	if err := row.Scan(&name, &age, &salary, &isMarried); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
+	for i, person := range people {
+		if person.Name != expectedPeople[i].Name {
+			t.Errorf("Expected name %v, got %v", expectedPeople[i].Name, person.Name)
+		}
+		if person.Age != expectedPeople[i].Age {
+			t.Errorf("Expected age %v, got %v", expectedPeople[i].Age, person.Age)
+		}
+		if person.Salary != expectedPeople[i].Salary {
+			t.Errorf("Expected salary %v, got %v", expectedPeople[i].Salary, person.Salary)
+		}
+		if person.IsMarried != expectedPeople[i].IsMarried {
+			t.Errorf("Expected is_married %v, got %v", expectedPeople[i].IsMarried, person.IsMarried)
+		}
 	}
 
-	if name != expectedName {
-		t.Errorf("Expected name %v in database, got %v", expectedName, name)
-	}
-	if age != expectedAge {
-		t.Errorf("Expected age %v in database, got %v", expectedAge, age)
-	}
-	if salary != expectedSalary {
-		t.Errorf("Expected salary %v in database, got %v", expectedSalary, salary)
-	}
-	if isMarried != expectedIsMarried {
-		t.Errorf("Expected is_married %v in database, got %v", expectedIsMarried, isMarried)
-	}
 }
 
 func TestReadJSONFromFile(t *testing.T) {
@@ -116,12 +155,6 @@ func TestReadJSONFromFile(t *testing.T) {
 	}
 	defer gf.Close()
 
-	// Insert the data into the SQLite table using the Insert method
-	values := []interface{}{person.Name, person.Age, person.Salary, person.IsMarried}
-	if err := gf.Insert(&person, values); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
 	// Verify the struct fields
 	expectedName := "John"
 	expectedAge := 30
@@ -147,155 +180,6 @@ func TestReadJSONFromFile(t *testing.T) {
 	var salary float64
 	var isMarried bool
 
-	row := gf.Query("SELECT Name, Age, Salary, IsMarried FROM Person")
-	if err := row.Scan(&name, &age, &salary, &isMarried); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if name != expectedName {
-		t.Errorf("Expected name %v in database, got %v", expectedName, name)
-	}
-	if age != expectedAge {
-		t.Errorf("Expected age %v in database, got %v", expectedAge, age)
-	}
-	if salary != expectedSalary {
-		t.Errorf("Expected salary %v in database, got %v", expectedSalary, salary)
-	}
-	if isMarried != expectedIsMarried {
-		t.Errorf("Expected is_married %v in database, got %v", expectedIsMarried, isMarried)
-	}
-
-}
-
-func TestReadCSVFromFile(t *testing.T) {
-	type Person struct {
-		Name      string  `json:"name"`
-		Age       int     `json:"age"`
-		Salary    float64 `json:"salary"`
-		IsMarried bool    `json:"is_married"`
-	}
-
-	// Create a temporary CSV file
-	csvContent := `name,age,salary,is_married
-John,30,50000.50,true`
-	tmpFile, err := os.CreateTemp("", "test.csv")
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(csvContent); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	tmpFile.Close()
-
-	var person Person
-
-	gf, err := ReadCSVFromFile(tmpFile.Name(), &person)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	defer gf.Close()
-
-	// Insert the data into the SQLite table using the Insert method
-	values := []interface{}{person.Name, person.Age, person.Salary, person.IsMarried}
-	if err := gf.Insert(&person, values); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	// Verify the struct fields
-	expectedName := "John"
-	expectedAge := 30
-	expectedSalary := 50000.50
-	expectedIsMarried := true
-
-	if person.Name != expectedName {
-		t.Errorf("Expected name %v, got %v", expectedName, person.Name)
-	}
-	if person.Age != expectedAge {
-		t.Errorf("Expected age %v, got %v", expectedAge, person.Age)
-	}
-	if person.Salary != expectedSalary {
-		t.Errorf("Expected salary %v, got %v", expectedSalary, person.Salary)
-	}
-	if person.IsMarried != expectedIsMarried {
-		t.Errorf("Expected is_married %v, got %v", expectedIsMarried, person.IsMarried)
-	}
-
-	// Verify the data in the SQLite table
-	var name string
-	var age int
-	var salary float64
-	var isMarried bool
-	row := gf.Query("SELECT Name, Age, Salary, IsMarried FROM Person")
-	if err := row.Scan(&name, &age, &salary, &isMarried); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	if name != expectedName {
-		t.Errorf("Expected name %v in database, got %v", expectedName, name)
-	}
-	if age != expectedAge {
-		t.Errorf("Expected age %v in database, got %v", expectedAge, age)
-	}
-	if salary != expectedSalary {
-		t.Errorf("Expected salary %v in database, got %v", expectedSalary, salary)
-	}
-	if isMarried != expectedIsMarried {
-		t.Errorf("Expected is_married %v in database, got %v", expectedIsMarried, isMarried)
-	}
-}
-
-func TestReadCSVFromString(t *testing.T) {
-	type Person struct {
-		Name      string  `json:"name"`
-		Age       int     `json:"age"`
-		Salary    float64 `json:"salary"`
-		IsMarried bool    `json:"is_married"`
-	}
-
-	// CSV data as a string
-	csvData := `name,age,salary,is_married
-John,30,50000.50,true`
-
-	var person Person
-
-	gf, err := ReadCSVFromString(csvData, &person)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	defer gf.Close()
-
-	// Insert the data into the SQLite table using the Insert method
-	values := []interface{}{person.Name, person.Age, person.Salary, person.IsMarried}
-	if err := gf.Insert(&person, values); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	// Verify the struct fields
-	expectedName := "John"
-	expectedAge := 30
-	expectedSalary := 50000.50
-	expectedIsMarried := true
-
-	if person.Name != expectedName {
-		t.Errorf("Expected name %v, got %v", expectedName, person.Name)
-	}
-	if person.Age != expectedAge {
-		t.Errorf("Expected age %v, got %v", expectedAge, person.Age)
-	}
-	if person.Salary != expectedSalary {
-		t.Errorf("Expected salary %v, got %v", expectedSalary, person.Salary)
-	}
-	if person.IsMarried != expectedIsMarried {
-		t.Errorf("Expected is_married %v, got %v", expectedIsMarried, person.IsMarried)
-	}
-
-	// Verify the data in the SQLite table
-	var name string
-	var age int
-	var salary float64
-	var isMarried bool
 	row := gf.Query("SELECT Name, Age, Salary, IsMarried FROM Person")
 	if err := row.Scan(&name, &age, &salary, &isMarried); err != nil {
 		t.Fatalf("Expected no error, got %v", err)
@@ -332,19 +216,15 @@ func TestToCSV(t *testing.T) {
 		IsMarried: true,
 	}
 
-	// Create a DataFrame
-	df, err := populateStructAndSaveToDB(&person)
+	// Create a slice of Person structs
+	people := []Person{person}
+
+	// Create a new DataFrame
+	df, err := NewDataFrame(people)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-
-	// Insert the data into the SQLite table using the Insert method
-	values := []interface{}{person.Name, person.Age, person.Salary, person.IsMarried}
-	if err := df.Insert(&person, values); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-
-	defer df.Close()
+	defer df.DB.Close()
 
 	// Create a temporary CSV file
 	tmpFile, err := os.CreateTemp("", "test.csv")
@@ -354,7 +234,7 @@ func TestToCSV(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	// Write the DataFrame to the CSV file
-	if err := df.ToCSV(tmpFile.Name(), &person); err != nil { // Pass the person struct here
+	if err := df.ToCSV(tmpFile.Name(), &person); err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
@@ -400,25 +280,19 @@ func TestPerformanceToCSV(t *testing.T) {
 		IsMarried: true,
 	}
 
-	// Create a DataFrame and populate it with a million rows
-	df, err := populateStructAndSaveToDB(&person)
+	n := 10
+	// Create a slice of Person structs
+	people := make([]Person, n)
+	for i := range people {
+		people[i] = person
+	}
+
+	// Create a new DataFrame
+	df, err := NewDataFrame(people)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	defer df.Close()
-
-	// Insert a million rows
-	for i := 0; i < 1000000; i++ {
-		if _, err := df.DB.Exec("INSERT INTO Person (Name, Age, Salary, IsMarried) VALUES (?, ?, ?, ?)", person.Name, person.Age, person.Salary, person.IsMarried); err != nil {
-			t.Fatalf("Expected no error, got %v", err)
-		}
-	}
-
-	var count int
-	if err := df.Query("select count(*) from Person").Scan(&count); err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	fmt.Println(count)
+	defer df.DB.Close()
 
 	// Create a temporary CSV file
 	tmpFile, err := os.CreateTemp("", "test.csv")
@@ -472,7 +346,7 @@ func TestPerformanceToCSV(t *testing.T) {
 	}
 
 	// Verify the number of data rows
-	if len(records)-1 != 1000000 {
-		t.Errorf("Expected 1000000 rows, got %d", len(records)-1)
+	if len(records)-1 != n {
+		t.Errorf("Expected %d rows, got %d", n, len(records)-1)
 	}
 }

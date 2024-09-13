@@ -14,6 +14,62 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// NewDataFrame creates a new DataFrame instance and populates it with the provided data.
+func NewDataFrame(data interface{}) (*DataFrame, error) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		return nil, err
+	}
+	df := &DataFrame{DB: db}
+
+	if err := df.FromStructs(data); err != nil {
+		return nil, err
+	}
+
+	return df, nil
+}
+
+// FromStructs creates a DataFrame from a slice of structs.
+func (df *DataFrame) FromStructs(data interface{}) error {
+
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	//if v.Kind() != reflect.Slice {
+	//	return fmt.Errorf("data must be a slice of structs")
+	//}
+
+	if v.Len() == 0 {
+		return fmt.Errorf("data slice is empty")
+	}
+
+	elemType := v.Type().Elem()
+	if elemType.Kind() != reflect.Struct {
+		return fmt.Errorf("data must be a slice of structs")
+	}
+
+	df.StructType = elemType
+
+	// Use CreateTable method to create the table
+	if err := df.CreateTable(data); err != nil {
+		return err
+	}
+
+	for i := 0; i < v.Len(); i++ {
+		structVal := v.Index(i)
+		var values []interface{}
+		for j := 0; j < structVal.NumField(); j++ {
+			values = append(values, structVal.Field(j).Interface())
+		}
+		if err := df.Insert(data, values); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // ReadJSONFromString takes a JSON string and a pointer to a struct, populates the struct with the JSON data,
 // saves the data into a SQLite in-memory table, and returns a pointer to the database.
 //
@@ -25,38 +81,15 @@ import (
 // - A DataFrame.
 // - An error if any occurs during the process.
 //
-// Example usage:
-//
-//	type Person struct {
-//	    Name      string    `json:"name"`
-//	    Age       int       `json:"age"`
-//	    Salary    float64   `json:"salary"`
-//	    IsMarried bool      `json:"is_married"`
-//	    BirthDate time.Time `json:"birth_date"`
-//	}
-//
-//	jsonStr := `{
-//	    "name": "John",
-//	    "age": 30,
-//	    "salary": 50000.50,
-//	    "is_married": true,
-//	    "birth_date": "1990-01-01T00:00:00Z"
-//	}`
-//
-//	var person Person
-//	gf, err := FromJSON(jsonStr, &person)
-//	if err != nil {
-//	    log.Fatalf("Error: %v", err)
-//	}
-//	defer gf.Close()
+
 func ReadJSONFromString(jsonData string, v interface{}) (*DataFrame, error) {
 	// Unmarshal the JSON data into the struct
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
 		return nil, err
 	}
 
-	// Populate the struct and save to the database
-	return populateStructAndSaveToDB(v)
+	// Create a new DataFrame with the populated struct
+	return NewDataFrame(v)
 }
 
 // ReadJSONFromFile takes a JSON file path and a pointer to a struct, reads the JSON data from the file,
@@ -90,7 +123,17 @@ func ReadJSONFromFile(jsonFilePath string, v interface{}) (*DataFrame, error) {
 	}
 
 	jsonData := string(buffer)
-	return ReadJSONFromString(jsonData, v)
+
+	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
+		return nil, err
+	}
+
+	// Ensure v is a slice of structs
+	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, 0)
+	vSlice = reflect.Append(vSlice, reflect.ValueOf(v).Elem())
+
+	// Create a new DataFrame with the populated slice of structs
+	return NewDataFrame(vSlice.Interface())
 }
 
 // ReadCSVFromFile takes a CSV file path and a pointer to a struct, populates the struct with the CSV data,
@@ -104,41 +147,7 @@ func ReadJSONFromFile(jsonFilePath string, v interface{}) (*DataFrame, error) {
 // - A DataFrame.
 // - An error if any occurs during the process.
 //
-// Example usage:
-//
-//	type Person struct {
-//	    Name      string    `json:"name"`
-//	    Age       int       `json:"age"`
-//	    Salary    float64   `json:"salary"`
-//	    IsMarried bool      `json:"is_married"`
-//	    BirthDate time.Time `json:"birth_date"`
-//	}
-//
-//	csvContent := `name,age,salary,is_married,birth_date
-//	John,30,50000.50,true,1990-01-01T00:00:00Z`
-//	tmpFile, err := os.CreateTemp("", "test.csv")
-//	if err != nil {
-//	    log.Fatalf("Error: %v", err)
-//	}
-//	defer os.Remove(tmpFile.Name())
-//
-//	if _, err := tmpFile.WriteString(csvContent); err != nil {
-//	    log.Fatalf("Error: %v", err)
-//	}
-//	tmpFile.Close()
-//
-//	var person Person
-//	gf, err := ReadCSV(tmpFile.Name(), &person)
-//	if err != nil {
-//	    log.Fatalf("Error: %v", err)
-//	}
-//	defer gf.Close()
-//
-//	fmt.Printf("Name: %s\n", person.Name)
-//	fmt.Printf("Age: %d\n", person.Age)
-//	fmt.Printf("Salary: %.2f\n", person.Salary)
-//	fmt.Printf("IsMarried: %t\n", person.IsMarried)
-//	fmt.Printf("BirthDate: %s\n", person.BirthDate.Format(time.RFC3339))
+
 func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
@@ -186,101 +195,44 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 	}
 
 	headers := records[0]
-	data := records[1]
+	data := records[1:]
 
-	val := reflect.ValueOf(v).Elem()
-	typ := val.Type()
+	// Ensure v is a slice of structs
+	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, len(data))
 
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		for j, header := range headers {
-			if field.Tag.Get("json") == header {
-				fieldValue := val.Field(i)
-				switch fieldValue.Kind() {
+	for _, record := range data {
+		elem := reflect.New(reflect.TypeOf(v).Elem()).Elem()
+		for i, header := range headers {
+			field := elem.FieldByNameFunc(func(name string) bool {
+				field, ok := reflect.TypeOf(v).Elem().FieldByName(name)
+				return ok && field.Tag.Get("json") == header
+			})
+			if field.IsValid() {
+				switch field.Kind() {
 				case reflect.String:
-					fieldValue.SetString(data[j])
+					field.SetString(record[i])
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					intValue, _ := strconv.ParseInt(data[j], 10, 64)
-					fieldValue.SetInt(intValue)
+					intValue, _ := strconv.ParseInt(record[i], 10, 64)
+					field.SetInt(intValue)
 				case reflect.Float32, reflect.Float64:
-					floatValue, _ := strconv.ParseFloat(data[j], 64)
-					fieldValue.SetFloat(floatValue)
+					floatValue, _ := strconv.ParseFloat(record[i], 64)
+					field.SetFloat(floatValue)
 				case reflect.Bool:
-					boolValue, _ := strconv.ParseBool(data[j])
-					fieldValue.SetBool(boolValue)
+					boolValue, _ := strconv.ParseBool(record[i])
+					field.SetBool(boolValue)
 				case reflect.Struct:
-					if fieldValue.Type() == reflect.TypeOf(time.Time{}) {
-						timeValue, _ := time.Parse(time.RFC3339, data[j])
-						fieldValue.Set(reflect.ValueOf(timeValue))
+					if field.Type() == reflect.TypeOf(time.Time{}) {
+						timeValue, _ := time.Parse(time.RFC3339, record[i])
+						field.Set(reflect.ValueOf(timeValue))
 					}
 				}
 			}
 		}
+		vSlice = reflect.Append(vSlice, elem)
 	}
 
-	// Populate the struct and save to the database
-	return populateStructAndSaveToDB(v)
-}
-
-// populateStructAndSaveToDB takes a pointer to a struct, creates a SQLite in-memory table,
-// saves the data into the table, and returns a DataFrame.
-func populateStructAndSaveToDB(v interface{}) (*DataFrame, error) {
-	// Create an in-memory SQLite database
-	gf, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the type of the struct
-	val := reflect.ValueOf(v).Elem()
-	typ := val.Type()
-
-	// Create a table with the same name as the struct
-	tableName := typ.Name()
-	createTableQuery := fmt.Sprintf("CREATE TABLE %s (", tableName)
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		fieldName := field.Name
-		fieldType := "TEXT" // Default to TEXT
-
-		// Determine the SQLite field type based on the Go field type
-		switch field.Type.Kind() {
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			fieldType = "INTEGER"
-		case reflect.Float32, reflect.Float64:
-			fieldType = "REAL"
-		case reflect.Bool:
-			fieldType = "BOOLEAN"
-		case reflect.String:
-			fieldType = "TEXT"
-		default:
-			if field.Type == reflect.TypeOf(time.Time{}) {
-				tag := field.Tag.Get("json")
-				switch tag {
-				case "date":
-					fieldType = "DATE"
-				case "time":
-					fieldType = "TIME"
-				case "datetime":
-					fieldType = "DATETIME"
-				case "timestamp":
-					fieldType = "TIMESTAMP"
-				default:
-					fieldType = "TEXT"
-				}
-			}
-		}
-
-		createTableQuery += fmt.Sprintf("%s %s,", fieldName, fieldType)
-	}
-	createTableQuery = createTableQuery[:len(createTableQuery)-1] + ");"
-
-	// Execute the create table query
-	if _, err := gf.Exec(createTableQuery); err != nil {
-		return nil, err
-	}
-
-	return &DataFrame{DB: gf}, nil
+	// Create a new DataFrame with the populated slice of structs
+	return NewDataFrame(vSlice.Interface())
 }
 
 // ToCSV writes the contents of a DataFrame to a CSV file.

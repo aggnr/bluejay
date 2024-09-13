@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 )
 
 // DataFrame is a wrapper type over the SQLite database connection.
 type DataFrame struct {
-	DB *sql.DB
+	DB         *sql.DB
+	StructType reflect.Type
 }
 
 // Row is a wrapper type over the sql.Row.
@@ -69,9 +71,18 @@ func (r *Rows) Close() error {
 	return r.rows.Close()
 }
 
-// getTableNameAndColumns infers the table name and column names from the struct type
 func getTableNameAndColumns(v interface{}) (string, []string) {
-	typ := reflect.TypeOf(v).Elem()
+	typ := reflect.TypeOf(v)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() == reflect.Slice {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		panic("data must be a slice of structs")
+	}
+
 	tableName := typ.Name()
 	columns := make([]string, typ.NumField())
 	for i := 0; i < typ.NumField(); i++ {
@@ -111,4 +122,90 @@ func (df *DataFrame) Delete(v interface{}, condition string, conditionArgs []int
 	query := fmt.Sprintf("DELETE FROM %s WHERE %s", tableName, condition)
 	_, err := df.DB.Exec(query, conditionArgs...)
 	return err
+}
+
+func (df *DataFrame) CreateTable(v interface{}) error {
+	// Get the type of the struct
+	typ := reflect.TypeOf(v)
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	if typ.Kind() == reflect.Slice {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		return fmt.Errorf("data must be a slice of structs")
+	}
+
+	tableName := typ.Name()
+	createTableQuery := fmt.Sprintf("CREATE TABLE %s (", tableName)
+
+	// Generate the columns and their types
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		fieldName := field.Name
+		fieldType := "TEXT" // Default to TEXT
+
+		// Determine the SQLite field type based on the Go field type
+		switch field.Type.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			fieldType = "INTEGER"
+		case reflect.Float32, reflect.Float64:
+			fieldType = "REAL"
+		case reflect.Bool:
+			fieldType = "BOOLEAN"
+		case reflect.String:
+			fieldType = "TEXT"
+		default:
+			if field.Type == reflect.TypeOf(time.Time{}) {
+				fieldType = "DATETIME"
+			}
+		}
+
+		createTableQuery += fmt.Sprintf("%s %s,", fieldName, fieldType)
+	}
+	createTableQuery = strings.TrimSuffix(createTableQuery, ",") + ");"
+
+	// Execute the create table query
+	_, err := df.DB.Exec(createTableQuery)
+	return err
+}
+
+// Loc method to return one or more specified rows
+func (df *DataFrame) Loc(indices ...int) ([]map[string]interface{}, error) {
+	tableName := df.StructType.Name()
+	query := fmt.Sprintf("SELECT * FROM %s WHERE rowid IN (%s)", tableName, strings.Trim(strings.Join(strings.Fields(fmt.Sprint(indices)), ","), "[]"))
+
+	rows, err := df.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range columns {
+			row[col] = values[i]
+		}
+
+		result = append(result, row)
+	}
+
+	return result, nil
 }
