@@ -6,7 +6,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/aggnr/goframe"
@@ -29,19 +28,11 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, err := goframe.NewDataFrame(people)
-	if err != nil {
-		log.Fatalf("Error creating DataFrame: %v", err)
-	}
+	df, _ := goframe.NewDataFrame(people)
 	defer df.Close()
 
-	fmt.Println("DataFrame created successfully!")
-
 	// Use the Head method to get the top 5 rows
-	topRows, err := df.Head()
-	if err != nil {
-		log.Fatalf("Error getting top rows: %v", err)
-	}
+	topRows, _ := df.Head()
 
 	fmt.Println("Top 5 rows:")
 	for _, row := range topRows {
@@ -49,10 +40,7 @@ func main() {
 	}
 
 	// Use the Head method to get the top 3 rows
-	top3Rows, err := df.Head(3)
-	if err != nil {
-		log.Fatalf("Error getting top 3 rows: %v", err)
-	}
+	top3Rows, _ := df.Head(3)
 
 	fmt.Println("Top 3 rows:")
 	for _, row := range top3Rows {

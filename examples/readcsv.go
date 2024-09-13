@@ -5,9 +5,7 @@
 package main
 
 import (
-	"fmt"
 	"github.com/aggnr/goframe"
-	"log"
 )
 
 func main() {
@@ -22,12 +20,8 @@ func main() {
 		IsMarried bool
 	}
 
-	df, err := goframe.ReadCSVFromString(csvString, &Person{})
-	if err != nil {
-		log.Fatalf("Error loading CSV string: %v", err)
-	}
+	df, _ := goframe.ReadCSVFromString(csvString, &Person{})
 
 	defer df.Close()
-
-	fmt.Println("DataFrame created successfully from csv string!")
+	df.Display()
 }

@@ -7,7 +7,6 @@ package main
 import (
 	"fmt"
 	"github.com/aggnr/goframe"
-	"log"
 )
 
 func main() {
@@ -24,18 +23,20 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, err := goframe.NewDataFrame(people)
-	if err != nil {
-		log.Fatalf("Error creating DataFrame: %v", err)
-	}
+	df, _ := goframe.NewDataFrame(people)
+
 	defer df.Close()
 
-	rows, err := df.Loc(2)
-	if err != nil {
-		log.Fatalf("Error retrieving rows: %v", err)
-	}
+	rows, _ := df.Loc(2)
 
 	fmt.Println("Retrieved rows for index 2:")
+	for _, row := range rows {
+		fmt.Println(row)
+	}
+
+	rows, _ = df.Loc(1, 2)
+
+	fmt.Println("Retrieved rows for index 1 and 2:")
 	for _, row := range rows {
 		fmt.Println(row)
 	}

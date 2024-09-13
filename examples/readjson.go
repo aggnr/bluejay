@@ -5,9 +5,7 @@
 package main
 
 import (
-	"fmt"
 	"github.com/aggnr/goframe"
-	"log"
 )
 
 func main() {
@@ -25,12 +23,9 @@ func main() {
 
 	var people []Person
 
-	df, err := goframe.ReadJSONFromString(jsonString, &people)
-	if err != nil {
-		log.Fatalf("Error loading JSON string: %v", err)
-	}
+	df, _ := goframe.ReadJSONFromString(jsonString, &people)
 
 	defer df.Close()
 
-	fmt.Println("DataFrame created successfully from JSON string!")
+	df.Display()
 }

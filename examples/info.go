@@ -5,8 +5,6 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"time"
 
 	"github.com/aggnr/goframe"
@@ -29,16 +27,10 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, err := goframe.NewDataFrame(people)
-	if err != nil {
-		log.Fatalf("Error creating DataFrame: %v", err)
-	}
+	df, _ := goframe.NewDataFrame(people)
+
 	defer df.Close()
 
-	fmt.Println("DataFrame created successfully!")
-
 	// Use the Info method to get details about the DataFrame
-	if err := df.Info(); err != nil {
-		log.Fatalf("Error getting DataFrame info: %v", err)
-	}
+	df.Info()
 }
