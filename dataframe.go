@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// DataFrame is a wrapper type over the SQLite database connection.
+// Core DataFrame.
 type DataFrame struct {
 	DB         *sql.DB
 	StructType reflect.Type

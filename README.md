@@ -1,11 +1,11 @@
 # goframe
-goframe is a Go package that provides a simple interface for working with data frames.
+goframe is a framework that provides a simple interface for data analysis.
 
 ## Installation
 To install the goframe package, use the following command:
     
 ```
-go get github.com/yourusername/goframe
+go get github.com/aggnr/goframe
 ```
 
 ## Usage
