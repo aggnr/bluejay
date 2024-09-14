@@ -23,7 +23,7 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, _ := cow.NewDataFrame(people)
+	df, _ := bluejay.NewDataFrame(people)
 
 	defer df.Close()
 

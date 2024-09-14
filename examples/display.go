@@ -29,7 +29,7 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, _ := cow.NewDataFrame(people)
+	df, _ := bluejay.NewDataFrame(people)
 	defer df.Close()
 
 	// Use the Display method to print the top 5 rows

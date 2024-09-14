@@ -1,4 +1,4 @@
-package cow
+package bluejay
 
 import (
 	"database/sql"

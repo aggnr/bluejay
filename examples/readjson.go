@@ -23,7 +23,7 @@ func main() {
 
 	var people []Person
 
-	df, _ := cow.ReadJSONFromString(jsonString, &people)
+	df, _ := bluejay.ReadJSONFromString(jsonString, &people)
 
 	defer df.Close()
 

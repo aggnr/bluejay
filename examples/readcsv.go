@@ -20,7 +20,7 @@ func main() {
 		IsMarried bool
 	}
 
-	df, _ := cow.ReadCSVFromString(csvString, &Person{})
+	df, _ := bluejay.ReadCSVFromString(csvString, &Person{})
 
 	defer df.Close()
 	df.Display()
