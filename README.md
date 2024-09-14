@@ -1,3 +1,4 @@
+![Alt text](bluejay.ico)
 # BlueJay
 BlueJay is a framework that provides a simple interface for data analysis.
 
