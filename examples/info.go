@@ -7,7 +7,7 @@ package main
 import (
 	"time"
 
-	"github.com/aggnr/goframe"
+	"github.com/aggnr/cow"
 )
 
 func main() {

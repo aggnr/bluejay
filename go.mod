@@ -1,4 +1,4 @@
-module github.com/aggnr/goframe
+module github.com/aggnr/cow
 
 go 1.23.0
 

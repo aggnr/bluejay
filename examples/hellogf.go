@@ -6,7 +6,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/aggnr/goframe"
+	"github.com/aggnr/cow"
 	"log"
 )
 

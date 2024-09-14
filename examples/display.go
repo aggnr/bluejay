@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aggnr/goframe"
+	"github.com/aggnr/cow"
 )
 
 func main() {

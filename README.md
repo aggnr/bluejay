@@ -1,11 +1,11 @@
-# goframe
-goframe is a framework that provides a simple interface for data analysis.
+# cow
+cow is a framework that provides a simple interface for data analysis.
 
 ## Installation
-To install the goframe package, use the following command:
+To install the cow package, use the following command:
     
 ```
-go get github.com/aggnr/goframe
+go get github.com/aggnr/cow
 ```
 
 ## Usage
@@ -18,7 +18,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/aggnr/goframe"
+	"github.com/aggnr/cow"
 	"log"
 )
 
@@ -36,7 +36,7 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, err := goframe.NewDataFrame(people)
+	df, err := cow.NewDataFrame(people)
 	if err != nil {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
