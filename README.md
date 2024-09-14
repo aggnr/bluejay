@@ -1,5 +1,5 @@
-# cow
-cow is a framework that provides a simple interface for data analysis.
+# BlueJay
+BlueJay is a framework that provides a simple interface for data analysis.
 
 ## Installation
 To install the cow package, use the following command:
