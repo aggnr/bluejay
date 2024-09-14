@@ -1,4 +1,4 @@
-module github.com/aggnr/cow
+module github.com/aggnr/bluejay
 
 go 1.23.0
 
