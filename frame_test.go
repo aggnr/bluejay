@@ -1,4 +1,4 @@
-package goframe
+package cow
 
 import (
 	"encoding/csv"

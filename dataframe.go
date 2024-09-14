@@ -1,4 +1,4 @@
-package goframe
+package cow
 
 import (
 	"database/sql"

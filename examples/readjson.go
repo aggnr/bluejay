@@ -23,7 +23,7 @@ func main() {
 
 	var people []Person
 
-	df, _ := goframe.ReadJSONFromString(jsonString, &people)
+	df, _ := cow.ReadJSONFromString(jsonString, &people)
 
 	defer df.Close()
 

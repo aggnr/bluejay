@@ -1,4 +1,4 @@
-package goframe
+package cow
 
 import (
 	"database/sql"
@@ -173,15 +173,6 @@ func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
 }
 
 // ReadCSVFromString takes a CSV string and a pointer to a struct, populates the struct with the CSV data,
-// saves the data into a SQLite in-memory table, and returns a pointer to the database.
-//
-// Parameters:
-// - csvData: A string containing the CSV data.
-// - v: A pointer to the struct that will be populated with the CSV data.
-//
-// Returns:
-// - A DataFrame.
-// - An error if any occurs during the process.
 func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 	reader := csv.NewReader(strings.NewReader(csvData))
 	records, err := reader.ReadAll()
@@ -189,7 +180,6 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 		return nil, err
 	}
 
-	// Assuming the first row contains headers and the second row contains data
 	if len(records) < 2 {
 		return nil, fmt.Errorf("CSV data does not contain enough data")
 	}
@@ -197,7 +187,6 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 	headers := records[0]
 	data := records[1:]
 
-	// Ensure v is a slice of structs
 	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, len(data))
 
 	for _, record := range data {
@@ -212,18 +201,22 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 				case reflect.String:
 					field.SetString(record[i])
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					intValue, _ := strconv.ParseInt(record[i], 10, 64)
-					field.SetInt(intValue)
+					if val, err := strconv.ParseInt(record[i], 10, 64); err == nil {
+						field.SetInt(val)
+					}
 				case reflect.Float32, reflect.Float64:
-					floatValue, _ := strconv.ParseFloat(record[i], 64)
-					field.SetFloat(floatValue)
+					if val, err := strconv.ParseFloat(record[i], 64); err == nil {
+						field.SetFloat(val)
+					}
 				case reflect.Bool:
-					boolValue, _ := strconv.ParseBool(record[i])
-					field.SetBool(boolValue)
+					if val, err := strconv.ParseBool(record[i]); err == nil {
+						field.SetBool(val)
+					}
 				case reflect.Struct:
 					if field.Type() == reflect.TypeOf(time.Time{}) {
-						timeValue, _ := time.Parse(time.RFC3339, record[i])
-						field.Set(reflect.ValueOf(timeValue))
+						if val, err := time.Parse(time.RFC3339, record[i]); err == nil {
+							field.Set(reflect.ValueOf(val))
+						}
 					}
 				}
 			}
@@ -231,7 +224,6 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 		vSlice = reflect.Append(vSlice, elem)
 	}
 
-	// Create a new DataFrame with the populated slice of structs
 	return NewDataFrame(vSlice.Interface())
 }
 

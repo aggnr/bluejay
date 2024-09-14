@@ -20,7 +20,7 @@ func main() {
 		IsMarried bool
 	}
 
-	df, _ := goframe.ReadCSVFromString(csvString, &Person{})
+	df, _ := cow.ReadCSVFromString(csvString, &Person{})
 
 	defer df.Close()
 	df.Display()

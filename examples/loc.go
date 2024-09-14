@@ -23,7 +23,7 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, _ := goframe.NewDataFrame(people)
+	df, _ := cow.NewDataFrame(people)
 
 	defer df.Close()
 

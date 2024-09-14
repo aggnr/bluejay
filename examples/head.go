@@ -28,7 +28,7 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, _ := goframe.NewDataFrame(people)
+	df, _ := cow.NewDataFrame(people)
 	defer df.Close()
 
 	// Use the Head method to get the top 5 rows

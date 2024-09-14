@@ -24,7 +24,7 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, err := goframe.NewDataFrame(people)
+	df, err := cow.NewDataFrame(people)
 	if err != nil {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
