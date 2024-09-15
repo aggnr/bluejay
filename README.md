@@ -64,8 +64,18 @@ func main() {
 }
 ```
 
-### More examples
-For more examples, see the [examples](examples) directory.
+## Examples
+
+Here are some examples demonstrating how to use BlueJay:
+
+- [display](examples/display.go)
+- [head](examples/head.go)
+- [hellogf](examples/hellogf.go)
+- [info](examples/info.go)
+- [loc](examples/loc.go)
+- [readcsv](examples/readcsv.go)
+- [readjson](examples/readjson.go)
+- [tail](examples/tail.go)
 
 # License
 This project is licensed under the MIT License. See the LICENSE file for details.
