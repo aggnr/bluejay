@@ -172,7 +172,6 @@ func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
 	return ReadCSVFromString(csvData, v)
 }
 
-// ReadCSVFromString takes a CSV string and a pointer to a struct, populates the struct with the CSV data,
 func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 	reader := csv.NewReader(strings.NewReader(csvData))
 	records, err := reader.ReadAll()
@@ -194,8 +193,9 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 		for i, header := range headers {
 			field := elem.FieldByNameFunc(func(name string) bool {
 				field, ok := reflect.TypeOf(v).Elem().FieldByName(name)
-				return ok && field.Tag.Get("json") == header
+				return ok && (strings.EqualFold(field.Tag.Get("json"), header) || strings.EqualFold(name, header))
 			})
+
 			if field.IsValid() {
 				switch field.Kind() {
 				case reflect.String:
@@ -224,7 +224,12 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 		vSlice = reflect.Append(vSlice, elem)
 	}
 
-	return NewDataFrame(vSlice.Interface())
+	df, err := NewDataFrame(vSlice.Interface())
+	if err != nil {
+		return nil, err
+	}
+
+	return df, nil
 }
 
 // ToCSV writes the contents of a DataFrame to a CSV file.

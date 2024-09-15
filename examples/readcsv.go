@@ -10,8 +10,8 @@ import (
 
 func main() {
 	csvString := `Name,Age,Salary,IsMarried
-	John,30,50000.50,true
-	Jane,25,60000.75,false`
+John,30,50000.50,true
+Jane,25,60000.75,false`
 
 	type Person struct {
 		Name      string
@@ -20,7 +20,7 @@ func main() {
 		IsMarried bool
 	}
 
-	df, _ := bluejay.ReadCSVFromString(csvString, &Person{})
+	df,_ :=bluejay.ReadCSVFromString(csvString, &Person{})
 
 	defer df.Close()
 	df.Display()
