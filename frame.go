@@ -71,17 +71,6 @@ func (df *DataFrame) FromStructs(data interface{}) error {
 }
 
 // ReadJSONFromString takes a JSON string and a pointer to a struct, populates the struct with the JSON data,
-// saves the data into a SQLite in-memory table, and returns a pointer to the database.
-//
-// Parameters:
-// - jsonData: A string containing the JSON data.
-// - v: A pointer to the struct that will be populated with the JSON data.
-//
-// Returns:
-// - A DataFrame.
-// - An error if any occurs during the process.
-//
-
 func ReadJSONFromString(jsonData string, v interface{}) (*DataFrame, error) {
 	// Unmarshal the JSON data into the struct
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
@@ -93,15 +82,6 @@ func ReadJSONFromString(jsonData string, v interface{}) (*DataFrame, error) {
 }
 
 // ReadJSONFromFile takes a JSON file path and a pointer to a struct, reads the JSON data from the file,
-// populates the struct with the JSON data, saves the data into a SQLite in-memory table, and returns a pointer to the database.
-//
-// Parameters:
-// - jsonFilePath: A string containing the path to the JSON file.
-// - v: A pointer to the struct that will be populated with the JSON data.
-//
-// Returns:
-// - A DataFrame.
-// - An error if any occurs during the process.
 func ReadJSONFromFile(jsonFilePath string, v interface{}) (*DataFrame, error) {
 	file, err := os.Open(jsonFilePath)
 	if err != nil {
@@ -137,17 +117,6 @@ func ReadJSONFromFile(jsonFilePath string, v interface{}) (*DataFrame, error) {
 }
 
 // ReadCSVFromFile takes a CSV file path and a pointer to a struct, populates the struct with the CSV data,
-// saves the data into a SQLite in-memory table, and returns a pointer to the database.
-//
-// Parameters:
-// - csvFilePath: A string containing the path to the CSV file.
-// - v: A pointer to the struct that will be populated with the CSV data.
-//
-// Returns:
-// - A DataFrame.
-// - An error if any occurs during the process.
-//
-
 func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
@@ -172,6 +141,7 @@ func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
 	return ReadCSVFromString(csvData, v)
 }
 
+// ReadCSVFromString takes a CSV string and a pointer to a struct, populates the struct with the CSV data,
 func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 	reader := csv.NewReader(strings.NewReader(csvData))
 	records, err := reader.ReadAll()
@@ -233,12 +203,6 @@ func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 }
 
 // ToCSV writes the contents of a DataFrame to a CSV file.
-//
-// Parameters:
-// - csvFilePath: The path to the CSV file.
-//
-// Returns:
-// - An error if any occurs during the process.
 func (df *DataFrame) ToCSV(csvFilePath string, v interface{}) error {
 	// Open the CSV file for writing
 	file, err := os.Create(csvFilePath)
