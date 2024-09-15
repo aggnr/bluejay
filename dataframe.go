@@ -174,6 +174,7 @@ func (df *DataFrame) CreateTable(v interface{}) error {
 }
 
 // Loc method to return one or more specified rows
+// Example usage can be found [here](examples/loc.go).
 func (df *DataFrame) Loc(indices ...int) ([]map[string]interface{}, error) {
 	tableName := df.StructType.Name()
 	query := fmt.Sprintf("SELECT * FROM %s WHERE rowid IN (%s)", tableName, strings.Trim(strings.Join(strings.Fields(fmt.Sprint(indices)), ","), "[]"))
@@ -213,6 +214,7 @@ func (df *DataFrame) Loc(indices ...int) ([]map[string]interface{}, error) {
 }
 
 // Head method returns the top n rows, defaulting to 5
+// Example usage can be found [here](examples/head.go).
 func (df *DataFrame) Head(n ...int) ([]map[string]interface{}, error) {
 	rows := 5 // default number of rows
 	if len(n) > 0 {
@@ -257,6 +259,7 @@ func (df *DataFrame) Head(n ...int) ([]map[string]interface{}, error) {
 }
 
 // Display method prints the top n rows in tabular format, defaulting to 5
+// Example usage can be found [here](examples/display.go).
 func (df *DataFrame) Display(n ...int) error {
 	rows := 5 // default number of rows
 	if len(n) > 0 {
@@ -304,6 +307,7 @@ func (df *DataFrame) Display(n ...int) error {
 }
 
 // Tail method returns the bottom n rows, defaulting to 5
+// Example usage can be found [here](examples/tail.go).
 func (df *DataFrame) Tail(n ...int) ([]map[string]interface{}, error) {
 	rows := 5 // default number of rows
 	if len(n) > 0 {
@@ -353,6 +357,7 @@ func (df *DataFrame) Tail(n ...int) ([]map[string]interface{}, error) {
 }
 
 // Info method returns and prints details about the DataFrame
+// Example usage can be found [here](examples/info.go).
 func (df *DataFrame) Info() error {
 	// Get column names and types
 	columns, err := df.DB.Query(fmt.Sprintf("PRAGMA table_info(%s)", df.StructType.Name()))
