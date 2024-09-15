@@ -71,7 +71,7 @@ func (df *DataFrame) FromStructs(data interface{}) error {
 }
 
 // ReadJSONFromString takes a JSON string and a pointer to a struct, populates the struct with the JSON data,
-// Example usage can be found [here](examples/readjson.go).
+// Example usage can be found [here](https://github.com/aggnr/bluejay/blob/main/examples/readjson.go).
 func ReadJSONFromString(jsonData string, v interface{}) (*DataFrame, error) {
 	// Unmarshal the JSON data into the struct
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
@@ -143,7 +143,7 @@ func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
 }
 
 // ReadCSVFromString takes a CSV string and a pointer to a struct, populates the struct with the CSV data,
-// Example usage can be found [here](examples/readcsv.go).
+// Example usage can be found [here](https://github.com/aggnr/bluejay/blob/main/examples/readcsv.go).
 func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
 	reader := csv.NewReader(strings.NewReader(csvData))
 	records, err := reader.ReadAll()
