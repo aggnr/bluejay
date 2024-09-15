@@ -14,7 +14,7 @@
     
 </p>
 
-<p>
+<div>
 # BlueJay
 BlueJay is a framework that provides a simple interface for data analysis.
 
@@ -69,4 +69,4 @@ For more examples, see the [examples](examples) directory.
 
 # License
 This project is licensed under the MIT License. See the LICENSE file for details.
-</p>
+</div>
