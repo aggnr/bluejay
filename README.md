@@ -1,12 +1,28 @@
-![Alt text](bluejay.ico)
+
+<div align="center">
+  <img src="bluejay.ico" alt="BlueJay Icon">
+</div>
+
+
+<p align="center">
+  <a href="https://github.com/aggnr/bluejay/releases/latest">
+    <img src="https://img.shields.io/github/v/tag/aggnr/bluejay?label=latest%20release" alt="Latest Release">
+  </a>
+  <a href="https://github.com/aggnr/bluejay/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/aggnr/bluejay" alt="License">
+  </a>
+    
+</p>
+
+
 # BlueJay
 BlueJay is a framework that provides a simple interface for data analysis.
 
 ## Installation
-To install the cow package, use the following command:
+To install the bluejay package, use the following command:
     
 ```
-go get github.com/aggnr/cow
+go get github.com/aggnr/bluejay
 ```
 
 ## Usage
@@ -19,7 +35,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/aggnr/cow"
+	"github.com/aggnr/bluejay"
 	"log"
 )
 
@@ -37,7 +53,7 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, err := cow.NewDataFrame(people)
+	df, err := bluejay.NewDataFrame(people)
 	if err != nil {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
