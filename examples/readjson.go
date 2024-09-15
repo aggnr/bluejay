@@ -5,7 +5,7 @@
 package main
 
 import (
-	"github.com/aggnr/cow"
+	"github.com/aggnr/bluejay"
 )
 
 func main() {

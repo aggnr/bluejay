@@ -6,7 +6,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/aggnr/cow"
+	"github.com/aggnr/bluejay"
 	"log"
 )
 

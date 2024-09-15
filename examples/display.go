@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aggnr/cow"
+	"github.com/aggnr/bluejay"
 )
 
 func main() {
