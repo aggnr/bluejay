@@ -68,7 +68,7 @@ func main() {
 
 Here are some examples demonstrating how to use BlueJay:
 
-## Basic Usage
+### Basic Usage
 
 - [hellogf](examples/hellogf.go) - This example demonstrates how to create a simple DataFrame from a slice of structs.
 - [display](examples/display.go) - This example demonstrates how to display the contents of a DataFrame.
@@ -79,7 +79,7 @@ Here are some examples demonstrating how to use BlueJay:
 - [readjson](examples/readjson.go) - This example demonstrates how to read data from a JSON file into a DataFrame.
 - [tail](examples/tail.go) - This example demonstrates how to display the last few rows of a DataFrame.
 
-## Advanced Usage
+### Advanced Usage
 
 - [corr](examples/corr.go) - This example demonstrates how to use the Corr method to calculate the correlation matrix of a DataFrame.
 
