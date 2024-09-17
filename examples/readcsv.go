@@ -11,7 +11,7 @@ import (
 func main() {
 	csvString := `Name,Age,Salary,IsMarried
 John,30,50000.50,true
-Jane,25,60000.75,false`
+,,60000.75,false`
 
 	type Person struct {
 		Name      string

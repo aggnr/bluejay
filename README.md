@@ -68,14 +68,20 @@ func main() {
 
 Here are some examples demonstrating how to use BlueJay:
 
-- [display](examples/display.go)
-- [head](examples/head.go)
-- [hellogf](examples/hellogf.go)
-- [info](examples/info.go)
-- [loc](examples/loc.go)
-- [readcsv](examples/readcsv.go)
-- [readjson](examples/readjson.go)
-- [tail](examples/tail.go)
+## Basic Usage
+
+- [hellogf](examples/hellogf.go) - This example demonstrates how to create a simple DataFrame from a slice of structs.
+- [display](examples/display.go) - This example demonstrates how to display the contents of a DataFrame.
+- [head](examples/head.go) - This example demonstrates how to display the first few rows of a DataFrame.
+- [info](examples/info.go) - This example demonstrates how to display summary information about a DataFrame.
+- [loc](examples/loc.go) - This example demonstrates how to select specific rows and columns from a DataFrame.
+- [readcsv](examples/readcsv.go) - This example demonstrates how to read data from a CSV file into a DataFrame.
+- [readjson](examples/readjson.go) - This example demonstrates how to read data from a JSON file into a DataFrame.
+- [tail](examples/tail.go) - This example demonstrates how to display the last few rows of a DataFrame.
+
+## Advanced Usage
+
+- [corr](examples/corr.go) - This example demonstrates how to use the Corr method to calculate the correlation matrix of a DataFrame.
 
 # License
 This project is licensed under the MIT License. See the LICENSE file for details.

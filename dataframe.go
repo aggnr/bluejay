@@ -6,14 +6,14 @@ import (
 	"reflect"
 	"strings"
 	"time"
-	"encoding/csv"
-	"strconv"
+	"math"
 )
 
 // Core DataFrame.
 type DataFrame struct {
 	DB         *sql.DB
 	StructType reflect.Type
+	Data       interface{} // Add this field to hold the data
 }
 
 // Row is a wrapper type over the sql.Row.
@@ -445,4 +445,127 @@ func isNumericType(ctype string) bool {
 		}
 	}
 	return false
+}
+
+// Define a struct to hold the correlation matrix data
+type CorrelationMatrix struct {
+	Column1 string  `json:"Column1"`
+	Column2 string  `json:"Column2"`
+	Value   float64 `json:"Value"`
+}
+
+// Correlation method calculates the Pearson correlation coefficient between each pair of numeric columns and returns a DataFrame
+func (df *DataFrame) Corr() (*DataFrame, error) {
+	// Get column names and types
+	columns, err := df.DB.Query(fmt.Sprintf("PRAGMA table_info(%s)", df.StructType.Name()))
+	if err != nil {
+		return nil, err
+	}
+	defer columns.Close()
+
+	var columnNames []string
+	var columnTypes []string
+	for columns.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, dflt_value, pk interface{}
+		if err := columns.Scan(&cid, &name, &ctype, &notnull, &dflt_value, &pk); err != nil {
+			return nil, err
+		}
+		columnNames = append(columnNames, name)
+		columnTypes = append(columnTypes, ctype)
+	}
+
+	// Filter numeric columns
+	numericColumns := []string{}
+	for i, ctype := range columnTypes {
+		if isNumericType(ctype) {
+			numericColumns = append(numericColumns, columnNames[i])
+		}
+	}
+
+	// Initialize correlation matrix
+	var corrData []CorrelationMatrix
+
+	// Calculate mean and standard deviation for each numeric column
+	means := make(map[string]float64)
+	stdDevs := make(map[string]float64)
+	for _, col := range numericColumns {
+		query := fmt.Sprintf("SELECT AVG(%s) FROM %s", col, df.StructType.Name())
+		var mean float64
+		err := df.DB.QueryRow(query).Scan(&mean)
+		if err != nil {
+			return nil, err
+		}
+		means[col] = mean
+
+		// Calculate variance
+		varianceQuery := fmt.Sprintf("SELECT AVG((%s - ?) * (%s - ?)) FROM %s", col, col, df.StructType.Name())
+		var variance float64
+		err = df.DB.QueryRow(varianceQuery, mean, mean).Scan(&variance)
+		if err != nil {
+			return nil, err
+		}
+		stdDevs[col] = math.Sqrt(variance)
+	}
+
+	// Calculate correlation coefficients
+	for i, col1 := range numericColumns {
+		for j, col2 := range numericColumns {
+			if i <= j {
+				query := fmt.Sprintf("SELECT %s, %s FROM %s", col1, col2, df.StructType.Name())
+				rows, err := df.DB.Query(query)
+				if err != nil {
+					return nil, err
+				}
+				defer rows.Close()
+
+				var sum float64
+				var count int
+				for rows.Next() {
+					var val1, val2 float64
+					if err := rows.Scan(&val1, &val2); err != nil {
+						return nil, err
+					}
+					sum += (val1 - means[col1]) * (val2 - means[col2])
+					count++
+				}
+
+				if count > 1 {
+					corrValue := sum / float64(count-1) / (stdDevs[col1] * stdDevs[col2])
+					corrData = append(corrData, CorrelationMatrix{Column1: col1, Column2: col2, Value: corrValue})
+					if col1 != col2 {
+						corrData = append(corrData, CorrelationMatrix{Column1: col2, Column2: col1, Value: corrValue})
+					}
+				}
+			}
+		}
+	}
+
+	// Create a new DataFrame for the correlation matrix
+	corrDF := &DataFrame{
+		Data: corrData,
+	}
+
+	return corrDF, nil
+}
+
+// Helper function to calculate the square root
+func sqrt(x float64) float64 {
+	return x * x
+}
+
+// Display prints the correlation matrix in a readable format
+func (df *DataFrame) DisplayCorr() {
+	// Assuming df.Data contains the correlation matrix data
+	corrData, ok := df.Data.([]CorrelationMatrix)
+	if !ok {
+		fmt.Println("Invalid data format for correlation matrix")
+		return
+	}
+
+	fmt.Println("Correlation Matrix:")
+	for _, row := range corrData {
+		fmt.Printf("%s-%s: %.2f\n", row.Column1, row.Column2, row.Value)
+	}
 }
