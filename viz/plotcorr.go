@@ -4,8 +4,15 @@ import (
 	"fmt"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
 	"image/color"
 	"log"
+	"os"
+)
+
+var (
+	fontFace font.Face
 )
 
 // game holds the correlation matrix and other necessary data.
@@ -24,12 +31,32 @@ func newGame(matrix [][]float64, columns []string) *game {
 	}
 }
 
+// loadFont loads the "Source Code Pro" font from the viz/fonts directory.
+func loadFont() {
+	fontBytes, err := os.ReadFile("viz/fonts/SourceCodePro-Regular.ttf")
+	if err != nil {
+		log.Fatalf("failed to read font file: %v", err)
+	}
+	font, err := opentype.Parse(fontBytes)
+	if err != nil {
+		log.Fatalf("failed to parse font: %v", err)
+	}
+	const dpi = 72
+	fontFace, err = opentype.NewFace(font, &opentype.FaceOptions{
+		Size: 16,
+		DPI:  dpi,
+	})
+	if err != nil {
+		log.Fatalf("failed to create font face: %v", err)
+	}
+}
+
+
 // Update updates the game state.
 func (g *game) Update() error {
 	return nil
 }
 
-// Draw draws the correlation matrix on the screen.
 func (g *game) Draw(screen *ebiten.Image) {
 	// Set a dark grey background color
 	screen.Fill(color.RGBA{R: 100, G: 100, B: 100, A: 255})
@@ -38,8 +65,8 @@ func (g *game) Draw(screen *ebiten.Image) {
 		for j := range g.matrix[i] {
 			corr := g.matrix[i][j]
 			col := correlationToColor(corr)
-			x := (i + 1) * g.cellSize + 20 // Add border space
-			y := (j + 1) * g.cellSize + 20 // Add border space
+			x := (i + 1) * g.cellSize + 40 // Add consistent border space
+			y := (j + 1) * g.cellSize + 40 // Add consistent border space
 			ebitenutil.DrawRect(screen, float64(x), float64(y), float64(g.cellSize), float64(g.cellSize), col)
 
 			// Draw borders
@@ -62,8 +89,8 @@ func (g *game) Draw(screen *ebiten.Image) {
 	}
 
 	// Draw heatmap legend
-	legendX := len(g.matrix)*g.cellSize + 80
-	legendY := (len(g.matrix[0])*g.cellSize + 80) / 2 - 50 // Center the legend vertically
+	legendX := len(g.matrix)*g.cellSize + 100 // Move legend to the right
+	legendY := 40 // Align legend with the top of the matrix
 
 	for i := 0; i <= 100; i++ {
 		col := correlationToColor(float64(i)/50 - 1)
@@ -121,9 +148,10 @@ func correlationToColor(corr float64) color.Color {
 
 // PlotCorrMat plots the given correlation matrix using ebiten.
 func PlotCorrMat(matrix [][]float64, columns []string) {
+	loadFont() // Load the font before starting the game
 	game := newGame(matrix, columns)
-	windowWidth := (len(matrix) + 1) * 50 + 100 // Adjust window size for border space
-	windowHeight := (len(matrix[0]) + 1) * 50 + 100 // Adjust window size for border space
+	windowWidth := (len(matrix) + 1) * 50 + 140 // Adjust window size for border space
+	windowHeight := (len(matrix[0]) + 1) * 50 + 140 // Adjust window size for border space
 	ebiten.SetWindowSize(windowWidth, windowHeight)
 	ebiten.SetWindowTitle("Correlation Matrix")
 
