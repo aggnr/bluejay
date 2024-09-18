@@ -1,12 +1,9 @@
-// Description: This example demonstrates how to use the Corr method to calculate the correlation matrix of a DataFrame.
-
-//go:build ignoreme
-// +build ignoreme
 package main
 
 import (
 	"log"
 	"github.com/aggnr/bluejay"
+	viz "github.com/aggnr/bluejay/viz"
 )
 
 // Define the struct that matches the CSV data structure
@@ -14,21 +11,29 @@ type SampleData struct {
 	Age        int     `json:"Age"`
 	Salary     float64 `json:"Salary"`
 	Experience int     `json:"Experience"`
+	Height     float64 `json:"Height"`
+	Weight     float64 `json:"Weight"`
+	Score      float64 `json:"Score"`
 }
 
 func main() {
-	// CSV data as a string
-	csvString := `Age,Salary,Experience
-25,50000,2
-30,60000,5
-35,70000,8
-40,80000,11
-45,90000,14
-50,100000,17
-55,110000,20
-60,120000,23
-65,130000,26
-70,140000,29`
+	// CSV data as a string with mixed correlations
+	csvString := `Age,Salary,Experience,Height,Weight,Score
+25,50000,2,170,70,85
+30,60000,5,175,75,88
+35,70000,8,180,80,90
+40,80000,12,185,85,92
+45,90000,10,190,90,94
+50,100000,20,195,95,96
+55,110000,25,200,100,98
+60,120000,30,205,105,100
+65,130000,26,210,110,102
+70,140000,29,215,115,104
+75,135000,28,220,120,106
+80,130000,27,225,125,108
+85,125000,26,230,130,110
+90,120000,25,235,135,112
+95,115000,24,240,140,114`
 
 	// Read the CSV data into a DataFrame
 	df, err := bluejay.ReadCSVFromString(csvString, &SampleData{})
@@ -43,7 +48,9 @@ func main() {
 		log.Fatalf("Failed to calculate correlation matrix: %v", err)
 	}
 
-	// Print the correlation matrix using the Display method
-	corrDF.DisplayCorr()
-}
+	// Convert the correlation DataFrame to a 2D slice of float64 and get column names
+	corrMatrix, columns := corrDF.ToMatrix()
 
+	// Plot the correlation matrix
+	viz.PlotCorrMat(corrMatrix, columns)
+}

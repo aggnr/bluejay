@@ -555,6 +555,51 @@ func sqrt(x float64) float64 {
 	return x * x
 }
 
+// ToMatrix converts the DataFrame to a 2D slice of float64 and returns the column names
+func (df *DataFrame) ToMatrix() ([][]float64, []string) {
+	corrData, ok := df.Data.([]CorrelationMatrix)
+	if (!ok) {
+		return nil, nil
+	}
+
+	// Create a map to store the indices of each column
+	columnIndices := make(map[string]int)
+	index := 0
+	for _, row := range corrData {
+		if _, exists := columnIndices[row.Column1]; !exists {
+			columnIndices[row.Column1] = index
+			index++
+		}
+		if _, exists := columnIndices[row.Column2]; !exists {
+			columnIndices[row.Column2] = index
+			index++
+		}
+	}
+
+	// Initialize the matrix
+	size := len(columnIndices)
+	matrix := make([][]float64, size)
+	for i := range matrix {
+		matrix[i] = make([]float64, size)
+	}
+
+	// Fill the matrix with correlation values
+	for _, row := range corrData {
+		i := columnIndices[row.Column1]
+		j := columnIndices[row.Column2]
+		matrix[i][j] = row.Value
+		matrix[j][i] = row.Value // Ensure symmetry
+	}
+
+	// Extract column names
+	columns := make([]string, size)
+	for col, idx := range columnIndices {
+		columns[idx] = col
+	}
+
+	return matrix, columns
+}
+
 // Display prints the correlation matrix in a readable format
 func (df *DataFrame) DisplayCorr() {
 	// Assuming df.Data contains the correlation matrix data
