@@ -1,4 +1,4 @@
-package bluejay
+package main
 
 import (
 	"fmt"

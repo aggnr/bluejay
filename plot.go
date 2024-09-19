@@ -6,8 +6,8 @@ import (
 
 func main() {
 	// Run graphics example
-	viz.RunGraphics()
+	//viz.RunGraphics()
 
 	// Run UI example
-	// viz.RunUI()
+	viz.RunUI()
 }
