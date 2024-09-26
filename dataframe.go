@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"math"
+	"github.com/aggnr/bluejay/viz"
 )
 
 // Core DataFrame.
@@ -613,4 +614,33 @@ func (df *DataFrame) DisplayCorr() {
 	for _, row := range corrData {
 		fmt.Printf("%s-%s: %.2f\n", row.Column1, row.Column2, row.Value)
 	}
+}
+
+// Plot method to display a graph using the viz package
+func (df *DataFrame) ShowPlot(xCol, yCol string) error {
+	// Query to get the x and y data
+	query := fmt.Sprintf("SELECT %s, %s FROM %s", xCol, yCol, df.StructType.Name())
+	rows, err := df.DB.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var xData, yData []float64
+	for rows.Next() {
+		var x, y float64
+		if err := rows.Scan(&x, &y); err != nil {
+			return err
+		}
+		xData = append(xData, x)
+		yData = append(yData, y)
+	}
+
+	// Channel to send new data points for dynamic updates (optional)
+	dataChan := make(chan float64)
+
+	// Call ShowPlot to display the plot with initial data
+	viz.ShowPlot(xData, yData, xCol, yCol, dataChan)
+
+	return nil
 }
