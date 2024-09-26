@@ -83,5 +83,8 @@ Here are some examples demonstrating how to use BlueJay:
 
 - [corr](examples/corr.go) - This example demonstrates how to use the Corr method to calculate the correlation matrix of a DataFrame.
 
+### Plotting
+
+- [plot](examples/ui/plot.go) - This example demonstrates how to use the Plot method to create a line plot using two arrays.
 # License
 This project is licensed under the MIT License. See the LICENSE file for details.
