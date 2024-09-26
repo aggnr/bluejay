@@ -13,6 +13,8 @@ func main() {
 	// Initial y-axis data points
 	yData := []float64{0.1, 0.5, 0.9, 0.4, 0.7, 1.0}
 
+	title := "Dynamic Plot"
+
 	// Channel to send new data points for dynamic updates
 	dataChan := make(chan [2]float64)
 
@@ -28,5 +30,5 @@ func main() {
 	}()
 
 	// Call ShowPlot to display the plot with initial data and dynamic updates
-	viz.ShowPlot(xData, yData, "Time (s)", "Value", dataChan)
+	viz.ShowPlot(xData, yData, "Time (s)", "Value", title, dataChan)
 }

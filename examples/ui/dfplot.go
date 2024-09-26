@@ -25,7 +25,7 @@ func main() {
 	defer df.Close()
 
 	// Call ShowPlot to display the plot with initial data and dynamic updates
-	if err := df.ShowPlot("Age", "Salary"); err != nil {
+	if err := df.ShowPlot("Age", "Salary", ""); err != nil {
 		log.Fatalf("Error showing plot: %v", err)
 	}
 }

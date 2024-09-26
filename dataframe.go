@@ -617,7 +617,7 @@ func (df *DataFrame) DisplayCorr() {
 }
 
 // Plot method to display a graph using the viz package
-func (df *DataFrame) ShowPlot(xCol, yCol string) error {
+func (df *DataFrame) ShowPlot(xCol, yCol string, title string) error {
 	// Query to get the x and y data
 	query := fmt.Sprintf("SELECT %s, %s FROM %s", xCol, yCol, df.StructType.Name())
 	rows, err := df.DB.Query(query)
@@ -641,7 +641,7 @@ func (df *DataFrame) ShowPlot(xCol, yCol string) error {
 
 
 	// Call ShowPlot to display the plot with initial data and dynamic updates
-	viz.ShowPlot(xData, yData, xCol, yCol, dataChan)
+	viz.ShowPlot(xData, yData, xCol, yCol, title, dataChan)
 
 	return nil
 }

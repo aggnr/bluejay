@@ -199,11 +199,14 @@ func (r *plotRenderer) Objects() []fyne.CanvasObject {
 func (r *plotRenderer) Destroy() {}
 
 // ShowPlot initializes and displays the plot in a new window
-func ShowPlot(xData, yData []float64, xAxisLabel, yAxisLabel string, dataChan <-chan [2]float64) {
-	fmt.Println(xData, yData)
+func ShowPlot(xData, yData []float64, xAxisLabel, yAxisLabel, title string, dataChan <-chan [2]float64) {
 	plotApp := app.New()
 	plotApp.Settings().SetTheme(theme.LightTheme())
-	plotWindow := plotApp.NewWindow("Live Plot")
+
+	if title == "" {
+		title = yAxisLabel + " Plot"
+	}
+	plotWindow := plotApp.NewWindow(title)
 
 	plot := NewPlot(xAxisLabel, yAxisLabel)
 	for i := range yData {
