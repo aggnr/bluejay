@@ -626,6 +626,9 @@ func (df *DataFrame) ShowPlot(xCol, yCol string) error {
 	}
 	defer rows.Close()
 
+	// Channel to send new data points for dynamic updates
+	var dataChan chan [2]float64 = nil
+
 	var xData, yData []float64
 	for rows.Next() {
 		var x, y float64
@@ -636,10 +639,8 @@ func (df *DataFrame) ShowPlot(xCol, yCol string) error {
 		yData = append(yData, y)
 	}
 
-	// Channel to send new data points for dynamic updates (optional)
-	dataChan := make(chan float64)
 
-	// Call ShowPlot to display the plot with initial data
+	// Call ShowPlot to display the plot with initial data and dynamic updates
 	viz.ShowPlot(xData, yData, xCol, yCol, dataChan)
 
 	return nil

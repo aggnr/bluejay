@@ -1,17 +1,11 @@
-// This example demonstrates how to create a DataFrame from a slice of structs.
-//go:build ignoreme
-// +build ignoreme
-
 package main
 
 import (
-	"fmt"
 	"log"
 	"github.com/aggnr/bluejay"
 )
 
 func main() {
-
 	type Person struct {
 		Name      string
 		Age       int
@@ -20,8 +14,8 @@ func main() {
 	}
 
 	people := []Person{
-		{"John", 30, 50000.50, true},
-		{"Jane", 25, 60000.75, false},
+		{"John", 30, 5.50, true},
+		{"Jane", 25, 6.75, false},
 	}
 
 	df, err := bluejay.NewDataFrame(people)
@@ -30,8 +24,8 @@ func main() {
 	}
 	defer df.Close()
 
-	fmt.Println("DataFrame created successfully!")
-
-	df.ShowPlot("Age", "Salary")
-
+	// Call ShowPlot to display the plot with initial data and dynamic updates
+	if err := df.ShowPlot("Age", "Salary"); err != nil {
+		log.Fatalf("Error showing plot: %v", err)
+	}
 }

@@ -3,17 +3,20 @@ package viz
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 	"image/color"
 	"strconv"
+	"fmt"
 )
 
 // Plot is a custom widget to display live data as a plot
 type Plot struct {
 	widget.BaseWidget
-	data       []float64
+	xData      []float64
+	yData      []float64
 	xAxisLabel string
 	yAxisLabel string
 }
@@ -26,8 +29,9 @@ func NewPlot(xAxisLabel, yAxisLabel string) *Plot {
 }
 
 // UpdateData updates the data of the plot
-func (p *Plot) UpdateData(newData float64) {
-	p.data = append(p.data, newData)
+func (p *Plot) UpdateData(newXData, newYData float64) {
+	p.xData = append(p.xData, newXData)
+	p.yData = append(p.yData, newYData)
 	p.Refresh()
 }
 
@@ -51,6 +55,7 @@ type plotRenderer struct {
 	lines      []fyne.CanvasObject
 	xScale     []fyne.CanvasObject
 	yScale     []fyne.CanvasObject
+	points     []fyne.CanvasObject // Add this field
 }
 
 // Layout implements fyne.WidgetRenderer
@@ -66,28 +71,61 @@ func (r *plotRenderer) Layout(size fyne.Size) {
 	r.yAxisLabel.Alignment = fyne.TextAlignCenter
 	r.yAxisLabel.TextStyle = fyne.TextStyle{Italic: true}
 
+	// Find the min and max values for x and y
+	minX, maxX := r.plot.xData[0], r.plot.xData[0]
+	minY, maxY := r.plot.yData[0], r.plot.yData[0]
+	for _, x := range r.plot.xData {
+		if x < minX {
+			minX = x
+		}
+		if x > maxX {
+			maxX = x
+		}
+	}
+	for _, y := range r.plot.yData {
+		if y < minY {
+			minY = y
+		}
+		if y > maxY {
+			maxY = y
+		}
+	}
+
 	// Layout lines
 	for i, line := range r.lines {
-		if i < len(r.plot.data)-1 {
-			x1 := padding + float32(i)*(size.Width-2*padding)/float32(len(r.plot.data)-1)
-			y1 := size.Height - padding - float32(r.plot.data[i])*(size.Height-2*padding)
-			x2 := padding + float32(i+1)*(size.Width-2*padding)/float32(len(r.plot.data)-1)
-			y2 := size.Height - padding - float32(r.plot.data[i+1])*(size.Height-2*padding)
+		if i < len(r.plot.xData)-1 {
+			x1 := padding + (float32(r.plot.xData[i]-minX)/float32(maxX-minX))*(size.Width-2*padding)
+			y1 := size.Height - padding - (float32(r.plot.yData[i]-minY)/float32(maxY-minY))*(size.Height-2*padding)
+			x2 := padding + (float32(r.plot.xData[i+1]-minX)/float32(maxX-minX))*(size.Width-2*padding)
+			y2 := size.Height - padding - (float32(r.plot.yData[i+1]-minY)/float32(maxY-minY))*(size.Height-2*padding)
 			line.(*canvas.Line).Position1 = fyne.NewPos(x1, y1)
 			line.(*canvas.Line).Position2 = fyne.NewPos(x2, y2)
 		}
 	}
 
-	// Layout x-axis scale
+	// Layout x-axis scale with actual values
 	for i, label := range r.xScale {
-		x := padding + float32(i)*(size.Width-2*padding)/float32(len(r.plot.data)-1)
-		label.Move(fyne.NewPos(x, size.Height-padding+5))
+		x := padding + float32(i)*(size.Width-2*padding)/float32(len(r.plot.xData)-1)
+		if textLabel, ok := label.(*canvas.Text); ok {
+			textLabel.Text = fmt.Sprintf("%.2f", r.plot.xData[i])
+			textLabel.Move(fyne.NewPos(x, size.Height-padding+5))
+		}
 	}
 
-	// Layout y-axis scale
+	// Layout y-axis scale with actual values
 	for i, label := range r.yScale {
 		y := size.Height - padding - float32(i)*(size.Height-2*padding)/10
-		label.Move(fyne.NewPos(padding-30, y))
+		if textLabel, ok := label.(*canvas.Text); ok {
+			textLabel.Text = fmt.Sprintf("%.2f", minY+float64(i)*(maxY-minY)/10)
+			textLabel.Move(fyne.NewPos(padding-30, y))
+		}
+	}
+
+	// Layout points
+	for i, point := range r.points {
+		x := padding + (float32(r.plot.xData[i]-minX)/float32(maxX-minX))*(size.Width-2*padding)
+		y := size.Height - padding - (float32(r.plot.yData[i]-minY)/float32(maxY-minY))*(size.Height-2*padding)
+		point.(*canvas.Circle).Move(fyne.NewPos(x, y))
 	}
 }
 
@@ -105,14 +143,14 @@ func (r *plotRenderer) Refresh() {
 
 	// Create lines between points
 	r.lines = nil
-	for i := 0; i < len(r.plot.data)-1; i++ {
+	for i := 0; i < len(r.plot.xData)-1; i++ {
 		line := canvas.NewLine(color.RGBA{R: 0, G: 0, B: 255, A: 255})
 		r.lines = append(r.lines, line)
 	}
 
 	// Create x-axis scale
 	r.xScale = nil
-	for i := 0; i < len(r.plot.data); i++ {
+	for i := 0; i < len(r.plot.xData); i++ {
 		label := canvas.NewText(strconv.Itoa(i), color.Black)
 		r.xScale = append(r.xScale, label)
 	}
@@ -124,7 +162,15 @@ func (r *plotRenderer) Refresh() {
 		r.yScale = append(r.yScale, label)
 	}
 
-	// Refresh lines and scales
+	// Create points
+	r.points = nil
+	for i := 0; i < len(r.plot.xData); i++ {
+		point := canvas.NewCircle(color.RGBA{R: 255, G: 0, B: 0, A: 255}) // Red color for points
+		point.Resize(fyne.NewSize(6, 6))
+		r.points = append(r.points, point)
+	}
+
+	// Refresh lines, scales, and points
 	for _, line := range r.lines {
 		canvas.Refresh(line)
 	}
@@ -134,6 +180,9 @@ func (r *plotRenderer) Refresh() {
 	for _, label := range r.yScale {
 		canvas.Refresh(label)
 	}
+	for _, point := range r.points {
+		canvas.Refresh(point)
+	}
 }
 
 // Objects implements fyne.WidgetRenderer
@@ -142,6 +191,7 @@ func (r *plotRenderer) Objects() []fyne.CanvasObject {
 	objects = append(objects, r.lines...)
 	objects = append(objects, r.xScale...)
 	objects = append(objects, r.yScale...)
+	objects = append(objects, r.points...) // Add points to objects
 	return objects
 }
 
@@ -149,22 +199,27 @@ func (r *plotRenderer) Objects() []fyne.CanvasObject {
 func (r *plotRenderer) Destroy() {}
 
 // ShowPlot initializes and displays the plot in a new window
-func ShowPlot(xData, yData []float64, xAxisLabel, yAxisLabel string, dataChan <-chan float64) {
+func ShowPlot(xData, yData []float64, xAxisLabel, yAxisLabel string, dataChan <-chan [2]float64) {
+	fmt.Println(xData, yData)
 	plotApp := app.New()
+	plotApp.Settings().SetTheme(theme.LightTheme())
 	plotWindow := plotApp.NewWindow("Live Plot")
 
 	plot := NewPlot(xAxisLabel, yAxisLabel)
-	for _, data := range yData {
-		plot.UpdateData(data)
+	for i := range yData {
+		plot.UpdateData(xData[i], yData[i])
 	}
 
 	plotWindow.SetContent(container.NewVBox(
 		plot,
 	))
 
+	// Goroutine to update the plot with new data points
 	go func() {
-		for newData := range dataChan {
-			plot.UpdateData(newData)
+		if dataChan != nil {
+			for newData := range dataChan {
+				plot.UpdateData(newData[0], newData[1])
+			}
 		}
 	}()
 
