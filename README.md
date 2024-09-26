@@ -85,6 +85,8 @@ Here are some examples demonstrating how to use BlueJay:
 
 ### Plotting
 
-- [plot](examples/ui/plot.go) - This example demonstrates how to use the Plot method to create a line plot using two arrays.
+- [dfplot](examples/ui/dfplot.go) - This example demonstrates how to use the Plot method to create a line plot of two columns in a DataFrame.
+- [dynamicplot](examples/ui/dynamicplot.go) - This example demonstrates how to use the Plot method to create a dynamic plot of two columns.
+
 # License
 This project is licensed under the MIT License. See the LICENSE file for details.
