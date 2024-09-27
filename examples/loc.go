@@ -6,7 +6,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/aggnr/bluejay"
+	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, _ := bluejay.NewDataFrame(people)
+	df, _ := dataframe.NewDataFrame(people)
 
 	defer df.Close()
 

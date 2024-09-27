@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -22,6 +23,10 @@ func listExampleFiles(dir string) ([]string, error) {
 }
 
 func runExample(example string) {
+	fmt.Println("----------------------------")
+	fmt.Println("Running example:", example)
+	fmt.Println("----------------------------")
+
 	cmd := exec.Command("go", "run", example)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

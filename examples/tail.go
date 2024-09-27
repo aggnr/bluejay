@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aggnr/bluejay"
+	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, _ := bluejay.NewDataFrame(people)
+	df, _ := dataframe.NewDataFrame(people)
 
 	defer df.Close()
 
@@ -41,7 +41,7 @@ func main() {
 	}
 
 	// Use the Tail method to get the bottom 3 rows
-	bottom3Rows, err := df.Tail(3)
+	bottom3Rows, _ := df.Tail(3)
 
 	fmt.Println("Bottom 3 rows:")
 	for _, row := range bottom3Rows {

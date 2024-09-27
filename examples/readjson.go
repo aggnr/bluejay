@@ -5,7 +5,7 @@
 package main
 
 import (
-	"github.com/aggnr/bluejay"
+	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 
 	var people []Person
 
-	df, _ := bluejay.ReadJSONFromString(jsonString, &people)
+	df, _ := dataframe.ReadJSONFromString(jsonString, &people)
 
 	defer df.Close()
 

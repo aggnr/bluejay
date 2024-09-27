@@ -5,7 +5,7 @@
 package main
 
 import (
-	"github.com/aggnr/bluejay"
+	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
@@ -20,7 +20,7 @@ John,30,50000.50,true
 		IsMarried bool
 	}
 
-	df,_ :=bluejay.ReadCSVFromString(csvString, &Person{})
+	df,_ :=dataframe.ReadCSVFromString(csvString, &Person{})
 
 	defer df.Close()
 	df.Display()

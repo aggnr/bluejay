@@ -7,7 +7,7 @@ package main
 import (
 	"time"
 
-	"github.com/aggnr/bluejay"
+	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, _ := bluejay.NewDataFrame(people)
+	df, _ := dataframe.NewDataFrame(people)
 
 	defer df.Close()
 
