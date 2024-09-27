@@ -35,7 +35,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/aggnr/bluejay"
+	"github.com/aggnr/bluejay/dataframe"
 	"log"
 )
 
@@ -53,7 +53,7 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, err := bluejay.NewDataFrame(people)
+	df, err := dataframe.NewDataFrame(people)
 	if err != nil {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
