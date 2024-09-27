@@ -141,6 +141,8 @@ func (df *DataFrame) CreateTable(v interface{}) error {
 	}
 
 	tableName := typ.Name()
+	fmt.Println("Table Name:", tableName)
+	fmt.Println(v)
 	createTableQuery := fmt.Sprintf("CREATE TABLE %s (", tableName)
 
 	// Generate the columns and their types
@@ -168,6 +170,7 @@ func (df *DataFrame) CreateTable(v interface{}) error {
 		createTableQuery += fmt.Sprintf("%s %s,", fieldName, fieldType)
 	}
 	createTableQuery = strings.TrimSuffix(createTableQuery, ",") + ");"
+	fmt.Println("Create Table Query:", createTableQuery)
 
 	// Execute the create table query
 	_, err := df.DB.Exec(createTableQuery)
@@ -644,4 +647,38 @@ func (df *DataFrame) ShowPlot(xCol, yCol string, title string) error {
 	viz.ShowPlot(xData, yData, xCol, yCol, title, dataChan)
 
 	return nil
+}
+
+// Join method to join two DataFrames
+func (df *DataFrame) Join(other *DataFrame, joinType string, on []string) (*DataFrame, error) {
+	// Validate join type
+	validJoinTypes := map[string]bool{"inner": true, "outer": true, "left": true, "right": true}
+	if !validJoinTypes[joinType] {
+		return nil, fmt.Errorf("invalid join type: %s", joinType)
+	}
+
+	// Construct the join query
+	joinQuery := fmt.Sprintf("SELECT * FROM %s %s JOIN %s ON ", df.StructType.Name(), strings.ToUpper(joinType), other.StructType.Name())
+	joinConditions := []string{}
+	for _, col := range on {
+		joinConditions = append(joinConditions, fmt.Sprintf("%s.%s = %s.%s", df.StructType.Name(), col, other.StructType.Name(), col))
+	}
+	joinQuery += strings.Join(joinConditions, " AND ")
+
+	// Create a new table for the joined data
+	joinedTableName := "joined_table"
+	createTableQuery := fmt.Sprintf("CREATE TABLE %s AS %s", joinedTableName, joinQuery)
+
+	if _, err := df.DB.Exec(createTableQuery); err != nil {
+		return nil, err
+	}
+
+	// Create a new DataFrame for the joined data
+	joinedDF := &DataFrame{
+		DB:         df.DB,
+		StructType: df.StructType, // Assuming the same struct type for simplicity
+		Data:       nil,           // Data is not needed as it is stored in the new table
+	}
+
+	return joinedDF, nil
 }

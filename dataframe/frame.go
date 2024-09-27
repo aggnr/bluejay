@@ -16,7 +16,8 @@ import (
 
 // NewDataFrame creates a new DataFrame instance and populates it with the provided data.
 func NewDataFrame(data interface{}) (*DataFrame, error) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	// persist the data to disk
+	db, err := sql.Open("sqlite3", ":disk:")
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +272,35 @@ func (df *DataFrame) ToCSV(csvFilePath string, v interface{}) error {
 		if err := writer.Write(record); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// CleanUp closes the database connection and deletes all tables.
+func (df *DataFrame) CleanUp() error {
+	// Query to get all table names
+	rows, err := df.DB.Query("SELECT name FROM sqlite_master WHERE type='table'")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// Drop each table
+	var tableName string
+	for rows.Next() {
+		if err := rows.Scan(&tableName); err != nil {
+			return err
+		}
+		dropTableQuery := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
+		if _, err := df.DB.Exec(dropTableQuery); err != nil {
+			return err
+		}
+	}
+
+	// Close the database connection
+	if err := df.DB.Close(); err != nil {
+		return err
 	}
 
 	return nil
