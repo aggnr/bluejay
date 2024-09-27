@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 	"github.com/aggnr/bluejay/dataframe"
-	viz "github.com/aggnr/bluejay/viz"
+	"github.com/aggnr/bluejay/viz"
 )
 
 // Define the struct that matches the CSV data structure
@@ -36,7 +36,7 @@ func main() {
 95,115000,24,240,140,114`
 
 	// Read the CSV data into a DataFrame
-	df, err := bluejay.ReadCSVFromString(csvString, &SampleData{})
+	df, err := dataframe.ReadCSVFromString(csvString, &SampleData{})
 	if err != nil {
 		log.Fatalf("Failed to read CSV data: %v", err)
 	}
