@@ -1,4 +1,4 @@
-package bluejay
+package dataframe
 
 import (
 	"database/sql"

@@ -2,7 +2,7 @@ package main
 
 import (
 	"log"
-	"github.com/aggnr/bluejay"
+	"github.com/aggnr/bluejay/dataframe"
 	viz "github.com/aggnr/bluejay/viz"
 )
 

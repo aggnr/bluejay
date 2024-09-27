@@ -45,7 +45,7 @@ func (p *Plot) CreateRenderer() fyne.WidgetRenderer {
 	return &plotRenderer{plot: p, xAxis: xAxis, yAxis: yAxis, xAxisLabel: xAxisLabel, yAxisLabel: yAxisLabel}
 }
 
-// plotRenderer is the renderer for the Plot widget
+// Add a new field for the gridlines in the plotRenderer struct
 type plotRenderer struct {
 	plot       *Plot
 	xAxis      *canvas.Line
@@ -55,10 +55,11 @@ type plotRenderer struct {
 	lines      []fyne.CanvasObject
 	xScale     []fyne.CanvasObject
 	yScale     []fyne.CanvasObject
-	points     []fyne.CanvasObject // Add this field
+	points     []fyne.CanvasObject
+	gridlines  []fyne.CanvasObject // Add this field
 }
 
-// Layout implements fyne.WidgetRenderer
+// Layout the gridlines in the Layout method
 func (r *plotRenderer) Layout(size fyne.Size) {
 	padding := float32(40) // Add padding of 40 units
 	r.xAxis.Position1 = fyne.NewPos(padding, size.Height-padding)
@@ -127,6 +128,13 @@ func (r *plotRenderer) Layout(size fyne.Size) {
 		y := size.Height - padding - (float32(r.plot.yData[i]-minY)/float32(maxY-minY))*(size.Height-2*padding)
 		point.(*canvas.Circle).Move(fyne.NewPos(x, y))
 	}
+
+	// Layout horizontal gridlines
+	for i, gridline := range r.gridlines {
+		y := size.Height - padding - float32(i)*(size.Height-2*padding)/10
+		gridline.(*canvas.Line).Position1 = fyne.NewPos(padding, y)
+		gridline.(*canvas.Line).Position2 = fyne.NewPos(size.Width-padding, y)
+	}
 }
 
 // MinSize implements fyne.WidgetRenderer
@@ -134,7 +142,7 @@ func (r *plotRenderer) MinSize() fyne.Size {
 	return fyne.NewSize(800, 640)
 }
 
-// Refresh implements fyne.WidgetRenderer
+// Create the gridlines in the Refresh method
 func (r *plotRenderer) Refresh() {
 	canvas.Refresh(r.xAxis)
 	canvas.Refresh(r.yAxis)
@@ -170,7 +178,14 @@ func (r *plotRenderer) Refresh() {
 		r.points = append(r.points, point)
 	}
 
-	// Refresh lines, scales, and points
+	// Create horizontal gridlines
+	r.gridlines = nil
+	for i := 0; i <= 10; i++ {
+		gridline := canvas.NewLine(color.RGBA{R: 220, G: 220, B: 220, A: 255}) // Light gray color for gridlines
+		r.gridlines = append(r.gridlines, gridline)
+	}
+
+	// Refresh lines, scales, points, and gridlines
 	for _, line := range r.lines {
 		canvas.Refresh(line)
 	}
@@ -183,6 +198,9 @@ func (r *plotRenderer) Refresh() {
 	for _, point := range r.points {
 		canvas.Refresh(point)
 	}
+	for _, gridline := range r.gridlines {
+		canvas.Refresh(gridline)
+	}
 }
 
 // Objects implements fyne.WidgetRenderer
@@ -192,6 +210,7 @@ func (r *plotRenderer) Objects() []fyne.CanvasObject {
 	objects = append(objects, r.xScale...)
 	objects = append(objects, r.yScale...)
 	objects = append(objects, r.points...) // Add points to objects
+	objects = append(objects, r.gridlines...) // Add gridlines to objects
 	return objects
 }
 
