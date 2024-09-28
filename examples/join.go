@@ -56,5 +56,5 @@ func main() {
 		log.Fatalf("Error displaying joined DataFrame: %v", err)
 	}
 
-	defer dataframe.CleanUP()
+	defer dataframe.CleanUp()
 }

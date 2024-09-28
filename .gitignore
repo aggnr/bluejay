@@ -29,3 +29,6 @@ go.work.sum
 
 # log files
 *.log
+
+# sqlite database
+:disk:
