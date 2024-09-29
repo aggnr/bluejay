@@ -5,10 +5,17 @@
 package main
 
 import (
+	"log"
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
+
 	jsonString := `[
         {"Name": "John", "Age": 30, "Salary": 50000.50, "IsMarried": true},
         {"Name": "Jane", "Age": 25, "Salary": 60000.75, "IsMarried": false}
@@ -24,8 +31,6 @@ func main() {
 	var people []Person
 
 	df, _ := dataframe.ReadJSONFromString(jsonString, &people)
-
-	defer df.Close()
 
 	df.Display()
 }

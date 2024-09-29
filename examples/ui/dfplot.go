@@ -6,6 +6,12 @@ import (
 )
 
 func main() {
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
+
 	type Person struct {
 		Name      string
 		Age       int
@@ -22,7 +28,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
-	defer df.Close()
 
 	// Call ShowPlot to display the plot with initial data and dynamic updates
 	if err := df.ShowPlot("Age", "Salary", ""); err != nil {

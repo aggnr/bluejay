@@ -20,11 +20,11 @@ func PlotCorrMat(matrix [][]float64, columns []string) {
 	grid := container.NewGridWithColumns(len(columns) + 1)
 
 	// Add an empty cell at the top-left corner
-	grid.Add(canvas.NewText("", color.White))
+	grid.Add(canvas.NewText("", color.Black))
 
 	// Add column names to the top
 	for _, colName := range columns {
-		label := canvas.NewText(colName, color.White)
+		label := canvas.NewText(colName, color.Black)
 		label.Alignment = fyne.TextAlignCenter
 		grid.Add(label)
 	}
@@ -32,7 +32,7 @@ func PlotCorrMat(matrix [][]float64, columns []string) {
 	// Add rows with row names and matrix values
 	for i := range matrix {
 		// Add row name
-		rowLabel := canvas.NewText(columns[i], color.White)
+		rowLabel := canvas.NewText(columns[i], color.Black)
 		rowLabel.Alignment = fyne.TextAlignCenter
 		grid.Add(rowLabel)
 
@@ -87,7 +87,7 @@ func createLegend() *fyne.Container {
 		rect := canvas.NewRectangle(col)
 		rect.SetMinSize(fyne.NewSize(20, 20))
 
-		label := canvas.NewText(fmt.Sprintf("%.1f", value), color.White)
+		label := canvas.NewText(fmt.Sprintf("%.1f", value), color.Black)
 		label.Alignment = fyne.TextAlignCenter
 
 		legend.Add(container.NewVBox(rect, label))

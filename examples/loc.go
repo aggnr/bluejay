@@ -6,10 +6,17 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
+
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
 
 	type Person struct {
 		Name      string
@@ -24,8 +31,6 @@ func main() {
 	}
 
 	df, _ := dataframe.NewDataFrame(people)
-
-	defer df.Close()
 
 	rows, _ := df.Loc(2)
 

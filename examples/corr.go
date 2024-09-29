@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"github.com/aggnr/bluejay/dataframe"
 	"github.com/aggnr/bluejay/viz"
@@ -17,6 +18,12 @@ type SampleData struct {
 }
 
 func main() {
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
+
 	// CSV data as a string with mixed correlations
 	csvString := `Age,Salary,Experience,Height,Weight,Score
 25,50000,2,170,70,85
@@ -40,7 +47,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read CSV data: %v", err)
 	}
-	defer df.Close()
 
 	// Calculate the correlation matrix
 	corrDF, err := df.Corr()
@@ -53,4 +59,8 @@ func main() {
 
 	// Plot the correlation matrix
 	viz.PlotCorrMat(corrMatrix, columns)
+
+	// Display the correlation DataFrame
+	fmt.Println("Correlation DataFrame:")
+	corrDF.Display()
 }

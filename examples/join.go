@@ -4,11 +4,17 @@ package main
 
 import (
 	"log"
-	"fmt"
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
+
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
+
 	// Define two structs for the data
 	type Person struct {
 		ID   int
@@ -51,10 +57,11 @@ func main() {
 		log.Fatalf("Error joining DataFrames: %v", err)
 	}
 
+	dfPeople.Display()
+	dfJobs.Display()
+
 	// Display the joined DataFrame
 	if err := joinedDF.Display(); err != nil {
 		log.Fatalf("Error displaying joined DataFrame: %v", err)
 	}
-
-	defer dataframe.CleanUp()
 }

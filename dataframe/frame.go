@@ -1,7 +1,7 @@
 package dataframe
 
 import (
-	"database/sql"
+
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -14,14 +14,10 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+
 // NewDataFrame creates a new DataFrame instance and populates it with the provided data.
 func NewDataFrame(data interface{}) (*DataFrame, error) {
-	// persist the data to disk
-	db, err := sql.Open("sqlite3", ":disk:")
-	if err != nil {
-		return nil, err
-	}
-	df := &DataFrame{DB: db}
+	df := &DataFrame{}
 
 	if err := df.FromStructs(data); err != nil {
 		return nil, err
@@ -32,14 +28,10 @@ func NewDataFrame(data interface{}) (*DataFrame, error) {
 
 // FromStructs creates a DataFrame from a slice of structs.
 func (df *DataFrame) FromStructs(data interface{}) error {
-
 	v := reflect.ValueOf(data)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	//if v.Kind() != reflect.Slice {
-	//	return fmt.Errorf("data must be a slice of structs")
-	//}
 
 	if v.Len() == 0 {
 		return fmt.Errorf("data slice is empty")
@@ -51,6 +43,7 @@ func (df *DataFrame) FromStructs(data interface{}) error {
 	}
 
 	df.StructType = elemType
+	df.Name = elemType.Name()
 
 	// Use CreateTable method to create the table
 	if err := df.CreateTable(data); err != nil {
@@ -277,31 +270,4 @@ func (df *DataFrame) ToCSV(csvFilePath string, v interface{}) error {
 	return nil
 }
 
-// CleanUp closes the database connection and deletes all tables.
-func (df *DataFrame) CleanUp() error {
-	// Query to get all table names
-	rows, err := df.DB.Query("SELECT name FROM sqlite_master WHERE type='table'")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
 
-	// Drop each table
-	var tableName string
-	for rows.Next() {
-		if err := rows.Scan(&tableName); err != nil {
-			return err
-		}
-		dropTableQuery := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
-		if _, err := df.DB.Exec(dropTableQuery); err != nil {
-			return err
-		}
-	}
-
-	// Close the database connection
-	if err := df.DB.Close(); err != nil {
-		return err
-	}
-
-	return nil
-}

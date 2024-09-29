@@ -3,10 +3,18 @@ package main
 import (
 	"math/rand"
 	"time"
+	"log"
 	"github.com/aggnr/bluejay/viz"
+	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
+
 	// Initial x-axis data points
 	xData := []float64{0, 1, 2, 3, 4, 5}
 

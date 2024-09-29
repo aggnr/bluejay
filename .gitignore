@@ -32,3 +32,5 @@ go.work.sum
 
 # sqlite database
 :disk:
+*.db
+*.sqlite

@@ -7,11 +7,18 @@ package main
 import (
 	"fmt"
 	"time"
-
+	"log"
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
+
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
+
 	type Person struct {
 		ID        int
 		Name      string
@@ -29,8 +36,6 @@ func main() {
 	}
 
 	df, _ := dataframe.NewDataFrame(people)
-
-	defer df.Close()
 
 	// Use the Tail method to get the bottom 5 rows
 	bottomRows, _ := df.Tail()

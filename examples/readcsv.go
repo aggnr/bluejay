@@ -5,10 +5,17 @@
 package main
 
 import (
+	"log"
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
+	// Initialize the global database connection
+	if err := dataframe.Init(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer dataframe.Close()
+
 	csvString := `Name,Age,Salary,IsMarried
 John,30,50000.50,true
 ,,60000.75,false`
@@ -22,6 +29,5 @@ John,30,50000.50,true
 
 	df,_ :=dataframe.ReadCSVFromString(csvString, &Person{})
 
-	defer df.Close()
 	df.Display()
 }
