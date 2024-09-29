@@ -80,7 +80,7 @@ Here are some examples demonstrating how to use BlueJay:
 - [tail](examples/tail.go) - This example demonstrates how to display the last few rows of a DataFrame.
 
 ### Advanced Usage
-
+- [join](examples/join.go) - This example demonstrates how to join two DataFrames.
 - [corr](examples/corr.go) - This example demonstrates how to use the Corr method to calculate the correlation matrix of a DataFrame.
 
 ### Plotting
