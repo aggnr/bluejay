@@ -10,7 +10,7 @@ import (
 func main() {
 	// Initialize the global database connection
 	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing %v", err)
+		log.Fatalf("Error initializing database: %v", err)
 	}
 	defer dataframe.Close()
 
@@ -26,10 +26,16 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	_, err := dataframe.NewDataFrame(people)
-	if err != nil {
+	// Create a new DataFrame and populate it with the slice of structs
+	df := dataframe.NewDataFrame()
+	if err := df.FromStructs(people); err != nil {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
 
-	fmt.Println("DataFrame created successfully!")
+	// Display the DataFrame
+	if err := df.Display(); err != nil {
+		log.Fatalf("Error displaying DataFrame: %v", err)
+	}
+
+	fmt.Println("DataFrame created and displayed successfully!")
 }

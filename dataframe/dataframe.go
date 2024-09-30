@@ -1,243 +1,421 @@
 package dataframe
 
 import (
-	"database/sql"
+	"encoding/csv"
+	"encoding/json"
+	"os"
+	"strconv"
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
-	"math"
-	"github.com/aggnr/bluejay/viz"
+	"db" // Import the db package
 )
 
-var GlobalDB *sql.DB
-
-// Core DataFrame.
 type DataFrame struct {
 	Name       string
 	StructType reflect.Type
-	Data       interface{}
+	Data       map[int]interface{}
+	Index      *db.BPlusTree // Use the BPlusTree from db package
+	mutex      sync.RWMutex
 }
 
-// Row represents a single row in the DataFrame.
-type Row struct {
-	row *sql.Row
+func NewDataFrame() *DataFrame {
+	return &DataFrame{
+		Data:  make(map[int]interface{}),
+		Index: db.NewBPlusTree(), // Initialize the BPlusTree
+	}
 }
 
-// Rows represents multiple rows in the DataFrame.
-type Rows struct {
-	rows *sql.Rows
-}
-
-// Close closes the underlying sql.Rows.
-func (r *Rows) Close() error {
-	return r.rows.Close()
-}
-
-// Columns returns the column names.
-func (r *Rows) Columns() ([]string, error) {
-	return r.rows.Columns()
-}
-
-// Next prepares the next row for reading.
-func (r *Rows) Next() bool {
-	return r.rows.Next()
-}
-
-// Scan copies the columns in the current row into the values pointed at by dest.
-func (r *Rows) Scan(dest ...interface{}) error {
-	return r.rows.Scan(dest...)
-}
-
-// InitDB initializes the global database connection.
-func Init() error {
-	var err error
-	GlobalDB, err = sql.Open("sqlite3", "identifier.sqlite")
-	if err != nil {
-		return err
+// FromStructs creates a DataFrame from a slice of structs.
+func (df *DataFrame) FromStructs(data interface{}) error {
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
 	}
 
-	// Call CleanUp to delete all tables
-	if err := CleanUp(); err != nil {
-		return err
+	if v.Len() == 0 {
+		return fmt.Errorf("data slice is empty")
 	}
 
-	return nil
-}
-
-// CleanUp closes the database connection and deletes all tables.
-func CleanUp() error {
-	if GlobalDB == nil {
-		return fmt.Errorf("database connection is not initialized")
-	}
-
-	// Query to get all table names
-	rows, err := GlobalDB.Query("SELECT name FROM sqlite_master WHERE type='table'")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	var dropQueries []string
-	var tableName string
-	for rows.Next() {
-		if err := rows.Scan(&tableName); err != nil {
-			return err
-		}
-		dropQueries = append(dropQueries, fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName))
-	}
-
-	for _, query := range dropQueries {
-		if _, err := GlobalDB.Exec(query); err != nil {
-			fmt.Println(err)
-			return err
-		}
-	}
-
-	return nil
-}
-
-// Close closes the underlying SQLite database connection.
-func Close() error {
-	if GlobalDB != nil {
-		if err := CleanUp(); err != nil {
-			return err
-		}
-		return GlobalDB.Close()
-	}
-	return nil
-}
-
-// getTableNameAndColumns returns the table name and columns for a given struct.
-func getTableNameAndColumns(v interface{}) (string, []string) {
-	typ := reflect.TypeOf(v)
-	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-	}
-	if typ.Kind() == reflect.Slice {
-		typ = typ.Elem()
-	}
-	if typ.Kind() != reflect.Struct {
-		return "", nil
-	}
-
-	tableName := typ.Name()
-	var columns []string
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		columns = append(columns, field.Name)
-	}
-	return tableName, columns
-}
-
-// Query wraps the underlying sql.DB.QueryRow method and returns a DataFrame.Row.
-func (df *DataFrame) Query(query string, args ...any) *Row {
-	return &Row{row: GlobalDB.QueryRow(query, args...)}
-}
-
-// QueryRows wraps the underlying sql.DB.Query method and returns a DataFrame.Rows.
-func (df *DataFrame) QueryRows(query string, args ...any) (*Rows, error) {
-	rows, err := GlobalDB.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	return &Rows{rows: rows}, nil
-}
-
-// Insert method for DataFrame
-func (df *DataFrame) Insert(v interface{}, values []interface{}) error {
-	tableName, columns := getTableNameAndColumns(v)
-	placeholders := make([]string, len(values))
-	for i := range placeholders {
-		placeholders[i] = "?"
-	}
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, strings.Join(columns, ", "), strings.Join(placeholders, ", "))
-	_, err := GlobalDB.Exec(query, values...)
-	return err
-}
-
-// Update method for DataFrame
-func (df *DataFrame) Update(v interface{}, values []interface{}, condition string, conditionArgs []interface{}) error {
-	tableName, columns := getTableNameAndColumns(v)
-	setClauses := make([]string, len(columns))
-	for i, col := range columns {
-		setClauses[i] = fmt.Sprintf("%s = ?", col)
-	}
-	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", tableName, strings.Join(setClauses, ", "), condition)
-	args := append(values, conditionArgs...)
-	_, err := GlobalDB.Exec(query, args...)
-	return err
-}
-
-// Delete method for DataFrame
-func (df *DataFrame) Delete(v interface{}, condition string, conditionArgs []interface{}) error {
-	tableName, _ := getTableNameAndColumns(v)
-	query := fmt.Sprintf("DELETE FROM %s WHERE %s", tableName, condition)
-	_, err := GlobalDB.Exec(query, conditionArgs...)
-	return err
-}
-
-// CreateTable method for DataFrame
-func (df *DataFrame) CreateTable(v interface{}) error {
-	typ := reflect.TypeOf(v)
-	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-	}
-	if typ.Kind() == reflect.Slice {
-		typ = typ.Elem()
-	}
-	if typ.Kind() != reflect.Struct {
+	elemType := v.Type().Elem()
+	if elemType.Kind() != reflect.Struct {
 		return fmt.Errorf("data must be a slice of structs")
 	}
 
-	tableName := typ.Name()
-	createTableQuery := fmt.Sprintf("CREATE TABLE %s (", tableName)
+	df.StructType = elemType
+	df.Name = elemType.Name()
 
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-		fieldName := field.Name
-		fieldType := "TEXT"
-
-		switch field.Type.Kind() {
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			fieldType = "INTEGER"
-		case reflect.Float32, reflect.Float64:
-			fieldType = "REAL"
-		case reflect.Bool:
-			fieldType = "BOOLEAN"
-		case reflect.String:
-			fieldType = "TEXT"
-		default:
-			if field.Type == reflect.TypeOf(time.Time{}) {
-				fieldType = "DATETIME"
-			}
+	for i := 0; i < v.Len(); i++ {
+		structVal := v.Index(i)
+		values := make(map[string]interface{})
+		for j := 0; j < structVal.NumField(); j++ {
+			values[structVal.Type().Field(j).Name] = structVal.Field(j).Interface()
 		}
-
-		createTableQuery += fmt.Sprintf("%s %s,", fieldName, fieldType)
+		df.InsertRow(i, values)
 	}
-	createTableQuery = strings.TrimSuffix(createTableQuery, ",") + ");"
 
-	_, err := GlobalDB.Exec(createTableQuery)
-	return err
+	return nil
 }
 
-// Loc method to return one or more specified rows
-func (df *DataFrame) Loc(indices ...int) ([]map[string]interface{}, error) {
-	tableName := df.StructType.Name()
-	query := fmt.Sprintf("SELECT * FROM %s WHERE rowid IN (%s)", tableName, strings.Trim(strings.Join(strings.Fields(fmt.Sprint(indices)), ","), "[]"))
+func (df *DataFrame) InsertRow(id int, row interface{}) {
+	df.mutex.Lock()
+	defer df.mutex.Unlock()
+	df.Data[id] = row
+	df.Index.Insert(id) // Insert the key into the BPlusTree
+}
 
-	rows, err := GlobalDB.Query(query)
+func (df *DataFrame) ReadRow(id int) (interface{}, error) {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+	found := df.Index.Search(id) // Search for the key in the BPlusTree
+	if !found {
+		return nil, fmt.Errorf("row with ID %d not found", id)
+	}
+	return df.Data[id], nil
+}
+
+func (df *DataFrame) UpdateRow(id int, newValues map[string]interface{}) error {
+	df.mutex.Lock()
+	defer df.mutex.Unlock()
+	found := df.Index.Search(id) // Search for the key in the BPlusTree
+	if !found {
+		return fmt.Errorf("row with ID %d not found", id)
+	}
+	df.Data[id] = newValues
+	return nil
+}
+
+func (df *DataFrame) DeleteRow(id int) error {
+	df.mutex.Lock()
+	defer df.mutex.Unlock()
+	found := df.Index.Search(id) // Search for the key in the BPlusTree
+	if !found {
+		return fmt.Errorf("row with ID %d not found", id)
+	}
+	delete(df.Data, id)
+	df.Index.Delete(id) // Delete the key from the BPlusTree
+	return nil
+}
+
+func (df *DataFrame) Loc(indices ...int) ([]map[string]interface{}, error) {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+	var result []map[string]interface{}
+	for _, id := range indices {
+		found := df.Index.Search(id) // Search for the key in the BPlusTree
+		if !found {
+			return nil, fmt.Errorf("row with ID %d not found", id)
+		}
+		result = append(result, df.Data[id].(map[string]interface{}))
+	}
+	return result, nil
+}
+
+func (df *DataFrame) Head(n ...int) ([]map[string]interface{}, error) {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+	rows := 5
+	if len(n) > 0 {
+		rows = n[0]
+	}
+	var result []map[string]interface{}
+	count := 0
+	for id, row := range df.Data {
+		if count >= rows {
+			break
+		}
+		result = append(result, row.(map[string]interface{}))
+		count++
+	}
+	return result, nil
+}
+
+func (df *DataFrame) Display(n ...int) error {
+	rows, err := df.Head(n...)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	columns := make([]string, 0, len(rows[0]))
+	for col := range rows[0] {
+		columns = append(columns, col)
+	}
+	fmt.Println(strings.Join(columns, "\t"))
+	for _, row := range rows {
+		values := make([]string, len(columns))
+		for i, col := range columns {
+			values[i] = fmt.Sprintf("%v", row[col])
+		}
+		fmt.Println(strings.Join(values, "\t"))
+	}
+	return nil
+}
+
+func (df *DataFrame) Tail(n ...int) ([]map[string]interface{}, error) {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+	rows := 5
+	if len(n) > 0 {
+		rows = n[0]
+	}
+	var result []map[string]interface{}
+	count := 0
+	for id := len(df.Data) - 1; id >= 0; id-- {
+		if count >= rows {
+			break
+		}
+		found := df.Index.Search(id) // Search for the key in the BPlusTree
+		if !found {
+			continue
+		}
+		result = append(result, df.Data[id].(map[string]interface{}))
+		count++
+	}
+	return result, nil
+}
+
+func (df *DataFrame) Info() error {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+
+	fmt.Println("DataFrame Name:", df.Name)
+	fmt.Println("Number of Rows:", len(df.Data))
+
+	if len(df.Data) > 0 {
+		firstRow := df.Data[0].(map[string]interface{})
+		fmt.Println("Number of Columns:", len(firstRow))
+		fmt.Println("Columns:")
+		for col, val := range firstRow {
+			fmt.Printf(" - %s: %s\n", col, reflect.TypeOf(val).String())
+		}
+	} else {
+		fmt.Println("Number of Columns: 0")
+	}
+
+	return nil
+}
+
+func (df *DataFrame) Join(other *DataFrame, joinType string, keys []string) (*DataFrame, error) {
+	df.mutex.RLock()
+	defer df.mutex.RUnlock()
+	other.mutex.RLock()
+	defer other.mutex.RUnlock()
+
+	result := NewDataFrame()
+	result.Name = df.Name + "_" + other.Name + "_join"
+
+	switch joinType {
+	case "inner":
+		for id, row := range df.Data {
+			if otherRow, found := other.Data[id]; found {
+				newRow := mergeRows(row.(map[string]interface{}), otherRow.(map[string]interface{}), df.Name, other.Name)
+				result.InsertRow(id, newRow)
+			}
+		}
+	case "left":
+		for id, row := range df.Data {
+			newRow := mergeRows(row.(map[string]interface{}), other.Data[id].(map[string]interface{}), df.Name, other.Name)
+			result.InsertRow(id, newRow)
+		}
+	case "right":
+		for id, row := range other.Data {
+			newRow := mergeRows(df.Data[id].(map[string]interface{}), row.(map[string]interface{}), df.Name, other.Name)
+			result.InsertRow(id, newRow)
+		}
+	case "outer":
+		allKeys := make(map[int]struct{})
+		for id := range df.Data {
+			allKeys[id] = struct{}{}
+		}
+		for id := range other.Data {
+			allKeys[id] = struct{}{}
+		}
+		for id := range allKeys {
+			newRow := mergeRows(df.Data[id].(map[string]interface{}), other.Data[id].(map[string]interface{}), df.Name, other.Name)
+			result.InsertRow(id, newRow)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported join type: %s", joinType)
+	}
+
+	return result, nil
+}
+
+func mergeRows(row1, row2 map[string]interface{}, name1, name2 string) map[string]interface{} {
+	newRow := make(map[string]interface{})
+	for k, v := range row1 {
+		newRow[name1+"."+k] = v
+	}
+	for k, v := range row2 {
+		newRow[name2+"."+k] = v
+	}
+	return newRow
+}
+
+// ReadJSONFromString takes a JSON string and a pointer to a struct, populates the struct with the JSON data.
+func ReadJSONFromString(jsonData string, v interface{}) (*DataFrame, error) {
+	// Unmarshal the JSON data into the struct
+	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
+		return nil, err
+	}
+
+	// Ensure v is a slice of structs
+	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, 0)
+	vSlice = reflect.Append(vSlice, reflect.ValueOf(v).Elem())
+
+	// Create a new DataFrame with the populated slice of structs
+	return NewDataFrame(vSlice.Interface())
+}
+
+// ReadJSONFromFile takes a JSON file path and a pointer to a struct, reads the JSON data from the file.
+func ReadJSONFromFile(jsonFilePath string, v interface{}) (*DataFrame, error) {
+	file, err := os.Open(jsonFilePath)
 	if err != nil {
 		return nil, err
+	}
+	defer file.Close()
+
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	fileSize := fileInfo.Size()
+	buffer := make([]byte, fileSize)
+
+	_, err = file.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonData := string(buffer)
+
+	// Unmarshal the JSON data into the struct
+	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
+		return nil, err
+	}
+
+	// Ensure v is a slice of structs
+	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, 0)
+	vSlice = reflect.Append(vSlice, reflect.ValueOf(v).Elem())
+
+	// Create a new DataFrame with the populated slice of structs
+	return NewDataFrame(vSlice.Interface())
+}
+
+// ReadCSVFromFile takes a CSV file path and a pointer to a struct, populates the struct with the CSV data.
+func ReadCSVFromFile(csvFilePath string, v interface{}) (*DataFrame, error) {
+	file, err := os.Open(csvFilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	return readCSV(reader, v)
+}
+
+// ReadCSVFromString takes a CSV string and a pointer to a struct, populates the struct with the CSV data.
+func ReadCSVFromString(csvData string, v interface{}) (*DataFrame, error) {
+	reader := csv.NewReader(strings.NewReader(csvData))
+	return readCSV(reader, v)
+}
+
+// readCSV is a helper function that reads CSV data using the provided reader and populates the struct.
+func readCSV(reader *csv.Reader, v interface{}) (*DataFrame, error) {
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(records) < 2 {
+		return nil, fmt.Errorf("CSV data does not contain enough data")
+	}
+
+	headers := records[0]
+	data := records[1:]
+
+	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, len(data))
+
+	for _, record := range data {
+		elem := reflect.New(reflect.TypeOf(v).Elem()).Elem()
+		for i, header := range headers {
+			field := elem.FieldByNameFunc(func(name string) bool {
+				field, ok := reflect.TypeOf(v).Elem().FieldByName(name)
+				return ok && (strings.EqualFold(field.Tag.Get("json"), header) || strings.EqualFold(name, header))
+			})
+
+			if field.IsValid() {
+				switch field.Kind() {
+				case reflect.String:
+					field.SetString(record[i])
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+					if val, err := strconv.ParseInt(record[i], 10, 64); err == nil {
+						field.SetInt(val)
+					}
+				case reflect.Float32, reflect.Float64:
+					if val, err := strconv.ParseFloat(record[i], 64); err == nil {
+						field.SetFloat(val)
+					}
+				case reflect.Bool:
+					if val, err := strconv.ParseBool(record[i]); err == nil {
+						field.SetBool(val)
+					}
+				case reflect.Struct:
+					if field.Type() == reflect.TypeOf(time.Time{}) {
+						if val, err := time.Parse(time.RFC3339, record[i]); err == nil {
+							field.Set(reflect.ValueOf(val))
+						}
+					}
+				}
+			}
+		}
+		vSlice = reflect.Append(vSlice, elem)
+	}
+
+	df, err := NewDataFrame(vSlice.Interface())
+	if err != nil {
+		return nil, err
+	}
+
+	return df, nil
+}
+
+// ToCSV writes the contents of a DataFrame to a CSV file.
+func (df *DataFrame) ToCSV(csvFilePath string, v interface{}) error {
+	// Open the CSV file for writing
+	file, err := os.Create(csvFilePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Get the table name and columns
+	tableName := reflect.TypeOf(v).Elem().Name()
+	rows, err := df.QueryRows("SELECT * FROM " + tableName)
+	if err != nil {
+		return err
 	}
 	defer rows.Close()
 
 	columns, err := rows.Columns()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var result []map[string]interface{}
+	// Write the header row
+	if err := writer.Write(columns); err != nil {
+		return err
+	}
+
+	// Write the data rows
 	for rows.Next() {
 		values := make([]interface{}, len(columns))
 		valuePtrs := make([]interface{}, len(columns))
@@ -246,496 +424,37 @@ func (df *DataFrame) Loc(indices ...int) ([]map[string]interface{}, error) {
 		}
 
 		if err := rows.Scan(valuePtrs...); err != nil {
-			return nil, err
-		}
-
-		row := make(map[string]interface{})
-		for i, col := range columns {
-			row[col] = values[i]
-		}
-
-		result = append(result, row)
-	}
-
-	return result, nil
-}
-
-// Head method returns the top n rows, defaulting to 5
-func (df *DataFrame) Head(n ...int) ([]map[string]interface{}, error) {
-	rows := 5
-	if len(n) > 0 {
-		rows = n[0]
-	}
-
-	tableName := df.StructType.Name()
-	query := fmt.Sprintf("SELECT * FROM %s LIMIT %d", tableName, rows)
-
-	resultRows, err := GlobalDB.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer resultRows.Close()
-
-	columns, err := resultRows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	var result []map[string]interface{}
-	for resultRows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := resultRows.Scan(valuePtrs...); err != nil {
-			return nil, err
-		}
-
-		row := make(map[string]interface{})
-		for i, col := range columns {
-			row[col] = values[i]
-		}
-
-		result = append(result, row)
-	}
-
-	return result, nil
-}
-
-// Display method prints the top n rows in tabular format, defaulting to 5
-func (df *DataFrame) Display(n ...int) error {
-	rows := 5
-	if len(n) > 0 {
-		rows = n[0]
-	}
-
-	tableName := df.Name
-	query := fmt.Sprintf("SELECT * FROM %s LIMIT %d", tableName, rows)
-
-	resultRows, err := GlobalDB.Query(query)
-	if err != nil {
-		return err
-	}
-	defer resultRows.Close()
-
-	columns, err := resultRows.Columns()
-	if err != nil {
-		return err
-	}
-
-	// Print the column headers
-	fmt.Println(strings.Join(columns, "\t"))
-
-	for resultRows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := resultRows.Scan(valuePtrs...); err != nil {
 			return err
 		}
 
-		row := make([]string, len(columns))
-		for i := range columns {
-			row[i] = fmt.Sprintf("%v", values[i])
+		record := make([]string, len(columns))
+		for i, val := range values {
+			if val != nil {
+				switch v := val.(type) {
+				case int64:
+					record[i] = strconv.FormatInt(v, 10)
+				case float64:
+					record[i] = strconv.FormatFloat(v, 'f', -1, 64)
+				case bool:
+					record[i] = strconv.FormatBool(v)
+				case time.Time:
+					record[i] = v.Format(time.RFC3339)
+				case []byte:
+					record[i] = string(v)
+				case string:
+					record[i] = v
+				default:
+					record[i] = fmt.Sprintf("%v", v)
+				}
+			} else {
+				record[i] = ""
+			}
 		}
 
-		fmt.Println(strings.Join(row, "\t"))
+		if err := writer.Write(record); err != nil {
+			return err
+		}
 	}
 
 	return nil
-}
-
-// Tail method returns the bottom n rows, defaulting to 5
-func (df *DataFrame) Tail(n ...int) ([]map[string]interface{}, error) {
-	rows := 5
-	if len(n) > 0 {
-		rows = n[0]
-	}
-
-	tableName := df.StructType.Name()
-	query := fmt.Sprintf("SELECT * FROM %s ORDER BY ROWID DESC LIMIT %d", tableName, rows)
-
-	resultRows, err := GlobalDB.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer resultRows.Close()
-
-	columns, err := resultRows.Columns()
-	if err != nil {
-		return nil, err
-	}
-
-	var result []map[string]interface{}
-	for resultRows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := resultRows.Scan(valuePtrs...); err != nil {
-			return nil, err
-		}
-
-		row := make(map[string]interface{})
-		for i, col := range columns {
-			row[col] = values[i]
-		}
-
-		result = append(result, row)
-	}
-
-	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
-		result[i], result[j] = result[j], result[i]
-	}
-
-	return result, nil
-}
-
-// isNumericType checks if a given column type is numeric.
-func isNumericType(columnType string) bool {
-	numericTypes := map[string]bool{
-		"INTEGER": true,
-		"REAL":    true,
-		"FLOAT":   true,
-		"DOUBLE":  true,
-	}
-	return numericTypes[columnType]
-}
-
-// Info method returns and prints details about the DataFrame
-func (df *DataFrame) Info() error {
-	columns, err := GlobalDB.Query(fmt.Sprintf("PRAGMA table_info(%s)", df.StructType.Name()))
-	if err != nil {
-		return err
-	}
-	defer columns.Close()
-
-	var columnNames []string
-	var columnTypes []string
-	for columns.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, dflt_value, pk interface{}
-		if err := columns.Scan(&cid, &name, &ctype, &notnull, &dflt_value, &pk); err != nil {
-			return err
-		}
-		columnNames = append(columnNames, name)
-		columnTypes = append(columnTypes, ctype)
-	}
-
-	fmt.Println("Column Names:", columnNames)
-	fmt.Println("Column Types:", columnTypes)
-
-	rowCount := 0
-	rowQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", df.StructType.Name())
-	err = GlobalDB.QueryRow(rowQuery).Scan(&rowCount)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Number of Rows:", rowCount)
-
-	nullCounts := make(map[string]int)
-	nonNullCounts := make(map[string]int)
-	ranges := make(map[string][2]interface{})
-
-	for i, col := range columnNames {
-		nullQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s IS NULL", df.StructType.Name(), col)
-		nonNullQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s IS NOT NULL", df.StructType.Name(), col)
-		var nullCount, nonNullCount int
-
-		err = GlobalDB.QueryRow(nullQuery).Scan(&nullCount)
-		if err != nil {
-			return err
-		}
-		err = GlobalDB.QueryRow(nonNullQuery).Scan(&nonNullCount)
-		if err != nil {
-			return err
-		}
-
-		nullCounts[col] = nullCount
-		nonNullCounts[col] = nonNullCount
-
-		if isNumericType(columnTypes[i]) {
-			rangeQuery := fmt.Sprintf("SELECT MIN(%s), MAX(%s) FROM %s", col, col, df.StructType.Name())
-			var min, max interface{}
-			err = GlobalDB.QueryRow(rangeQuery).Scan(&min, &max)
-			if err != nil {
-				return err
-			}
-			ranges[col] = [2]interface{}{min, max}
-		}
-	}
-
-	fmt.Println("Null Counts:", nullCounts)
-	fmt.Println("Non-Null Counts:", nonNullCounts)
-	fmt.Println("Ranges for Numeric Columns:", ranges)
-
-	return nil
-}
-
-// CorrelationMatrix represents the correlation between two columns.
-type CorrelationMatrix struct {
-	Column1 string
-	Column2 string
-	Value   float64
-}
-
-// Correlation method calculates the Pearson correlation coefficient between each pair of numeric columns and returns a DataFrame
-func (df *DataFrame) Corr() (*DataFrame, error) {
-	columns, err := GlobalDB.Query(fmt.Sprintf("PRAGMA table_info(%s)", df.StructType.Name()))
-	if err != nil {
-		return nil, err
-	}
-	defer columns.Close()
-
-	var columnNames []string
-	var columnTypes []string
-	for columns.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, dflt_value, pk interface{}
-		if err := columns.Scan(&cid, &name, &ctype, &notnull, &dflt_value, &pk); err != nil {
-			return nil, err
-		}
-		columnNames = append(columnNames, name)
-		columnTypes = append(columnTypes, ctype)
-	}
-
-	numericColumns := []string{}
-	for i, ctype := range columnTypes {
-		if isNumericType(ctype) {
-			numericColumns = append(numericColumns, columnNames[i])
-		}
-	}
-
-	var corrData []CorrelationMatrix
-
-	means := make(map[string]float64)
-	stdDevs := make(map[string]float64)
-	for _, col := range numericColumns {
-		query := fmt.Sprintf("SELECT AVG(%s) FROM %s", col, df.StructType.Name())
-		var mean float64
-		err := GlobalDB.QueryRow(query).Scan(&mean)
-		if err != nil {
-			return nil, err
-		}
-		means[col] = mean
-
-		varianceQuery := fmt.Sprintf("SELECT AVG((%s - ?) * (%s - ?)) FROM %s", col, col, df.StructType.Name())
-		var variance float64
-		err = GlobalDB.QueryRow(varianceQuery, mean, mean).Scan(&variance)
-		if err != nil {
-			return nil, err
-		}
-		stdDevs[col] = math.Sqrt(variance)
-	}
-
-	for i, col1 := range numericColumns {
-		for j, col2 := range numericColumns {
-			if i == j {
-				corrData = append(corrData, CorrelationMatrix{col1, col2, 1.0})
-				continue
-			}
-			covQuery := fmt.Sprintf("SELECT AVG((%s - ?) * (%s - ?)) FROM %s", col1, col2, df.StructType.Name())
-			var cov float64
-			err := GlobalDB.QueryRow(covQuery, means[col1], means[col2]).Scan(&cov)
-			if err != nil {
-				return nil, err
-			}
-			corr := cov / (stdDevs[col1] * stdDevs[col2])
-			corrData = append(corrData, CorrelationMatrix{col1, col2, corr})
-		}
-	}
-
-	corrDF := &DataFrame{
-		StructType: reflect.TypeOf(CorrelationMatrix{}),
-		Data:       corrData,
-	}
-
-	return corrDF, nil
-}
-
-// Helper function to calculate the square root
-func sqrt(x float64) float64 {
-	return x * x
-}
-
-// ToMatrix converts the DataFrame to a 2D slice of float64 and returns the column names
-func (df *DataFrame) ToMatrix() ([][]float64, []string) {
-	corrData, ok := df.Data.([]CorrelationMatrix)
-	if (!ok) {
-		return nil, nil
-	}
-
-	// Create a map to store the indices of each column
-	columnIndices := make(map[string]int)
-	index := 0
-	for _, row := range corrData {
-		if _, exists := columnIndices[row.Column1]; !exists {
-			columnIndices[row.Column1] = index
-			index++
-		}
-		if _, exists := columnIndices[row.Column2]; !exists {
-			columnIndices[row.Column2] = index
-			index++
-		}
-	}
-
-	// Initialize the matrix
-	size := len(columnIndices)
-	matrix := make([][]float64, size)
-	for i := range matrix {
-		matrix[i] = make([]float64, size)
-	}
-
-	// Fill the matrix with correlation values
-	for _, row := range corrData {
-		i := columnIndices[row.Column1]
-		j := columnIndices[row.Column2]
-		matrix[i][j] = row.Value
-		matrix[j][i] = row.Value // Ensure symmetry
-	}
-
-	// Extract column names
-	columns := make([]string, size)
-	for col, idx := range columnIndices {
-		columns[idx] = col
-	}
-
-	return matrix, columns
-}
-
-// Display prints the correlation matrix in a readable format
-func (df *DataFrame) DisplayCorr() {
-	// Assuming df.Data contains the correlation matrix data
-	corrData, ok := df.Data.([]CorrelationMatrix)
-	if !ok {
-		fmt.Println("Invalid data format for correlation matrix")
-		return
-	}
-
-	fmt.Println("Correlation Matrix:")
-	for _, row := range corrData {
-		fmt.Printf("%s-%s: %.2f\n", row.Column1, row.Column2, row.Value)
-	}
-}
-
-// ShowPlot method to display a graph using the viz package
-func (df *DataFrame) ShowPlot(xCol, yCol string, title string) error {
-	query := fmt.Sprintf("SELECT %s, %s FROM %s", xCol, yCol, df.StructType.Name())
-	rows, err := GlobalDB.Query(query)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	var dataChan chan [2]float64 = nil
-
-	var xData, yData []float64
-	for rows.Next() {
-		var x, y float64
-		if err := rows.Scan(&x, &y); err != nil {
-			return err
-		}
-		xData = append(xData, x)
-		yData = append(yData, y)
-	}
-
-	viz.ShowPlot(xData, yData, xCol, yCol, title, dataChan)
-
-	return nil
-}
-
-// Join performs a join on two DataFrames based on the specified key and join type
-func (df *DataFrame) Join(other *DataFrame, joinType string, keys []string) (*DataFrame, error) {
-	validJoinTypes := map[string]bool{"inner": true, "outer": true, "left": true, "right": true}
-	if !validJoinTypes[joinType] {
-		return nil, fmt.Errorf("invalid join type: %s", joinType)
-	}
-
-	// Get the type of the data in both DataFrames
-	dfType := df.StructType
-	otherType := other.StructType
-
-	// Create the SELECT clause with renamed columns
-	var selectClauses []string
-	for i := 0; i < dfType.NumField(); i++ {
-		field := dfType.Field(i)
-		selectClauses = append(selectClauses, fmt.Sprintf("%s.%s AS %s_%s", dfType.Name(), field.Name, dfType.Name(), field.Name))
-	}
-	for i := 0; i < otherType.NumField(); i++ {
-		field := otherType.Field(i)
-		selectClauses = append(selectClauses, fmt.Sprintf("%s.%s AS %s_%s", otherType.Name(), field.Name, otherType.Name(), field.Name))
-	}
-
-	// Construct the join query
-	joinQuery := fmt.Sprintf("SELECT %s FROM %s %s JOIN %s ON ", strings.Join(selectClauses, ", "), dfType.Name(), strings.ToUpper(joinType), otherType.Name())
-	joinConditions := []string{}
-	for _, col := range keys {
-		joinConditions = append(joinConditions, fmt.Sprintf("%s.%s = %s.%s", dfType.Name(), col, otherType.Name(), col))
-	}
-	joinQuery += strings.Join(joinConditions, " AND ")
-
-	// Create a meaningful name for the joined table
-	joinedTableName := fmt.Sprintf("%s_%s_joined", df.Name, other.Name)
-
-	// Create the joined table
-	createTableQuery := fmt.Sprintf("CREATE TABLE %s AS %s", joinedTableName, joinQuery)
-	if _, err := GlobalDB.Exec(createTableQuery); err != nil {
-		return nil, err
-	}
-
-	// Get the columns of the joined table
-	columns, err := GlobalDB.Query(fmt.Sprintf("PRAGMA table_info(%s)", joinedTableName))
-	if err != nil {
-		return nil, err
-	}
-	defer columns.Close()
-
-	// Create a new struct type based on the columns of the joined table
-	var fields []reflect.StructField
-	for columns.Next() {
-		var cid int
-		var name, ctype string
-		var notnull, dflt_value, pk interface{}
-		if err := columns.Scan(&cid, &name, &ctype, &notnull, &dflt_value, &pk); err != nil {
-			return nil, err
-		}
-
-		fieldType := reflect.TypeOf("")
-		switch ctype {
-		case "INTEGER":
-			fieldType = reflect.TypeOf(int(0))
-		case "REAL":
-			fieldType = reflect.TypeOf(float64(0))
-		case "BOOLEAN":
-			fieldType = reflect.TypeOf(bool(false))
-		case "DATETIME":
-			fieldType = reflect.TypeOf(time.Time{})
-		}
-
-		fields = append(fields, reflect.StructField{
-			Name: strings.Title(name),
-			Type: fieldType,
-			Tag:  reflect.StructTag(fmt.Sprintf(`json:"%s"`, name)),
-		})
-	}
-	combinedType := reflect.StructOf(fields)
-
-
-	// Create the joined DataFrame
-	joinedDF := &DataFrame{
-		Name:       joinedTableName,
-		StructType: combinedType,
-		Data:       nil,
-	}
-
-	return joinedDF, nil
 }
