@@ -34,3 +34,7 @@ go.work.sum
 :disk:
 *.db
 *.sqlite
+
+# Data files
+*.csv
+*.json
