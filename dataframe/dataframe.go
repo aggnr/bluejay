@@ -3,14 +3,17 @@ package dataframe
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"os"
-	"strconv"
+	"io"
 	"fmt"
+	"strconv"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
-	"db" // Import the db package
+	"math"
+	"github.com/aggnr/bluejay/db" // Import the db package
 )
 
 type DataFrame struct {
@@ -21,15 +24,22 @@ type DataFrame struct {
 	mutex      sync.RWMutex
 }
 
-func NewDataFrame() *DataFrame {
-	return &DataFrame{
+func NewDataFrame(data interface{}) (*DataFrame, error) {
+	df := &DataFrame{
 		Data:  make(map[int]interface{}),
 		Index: db.NewBPlusTree(), // Initialize the BPlusTree
 	}
+
+	if err := df.FromStructs(data); err != nil {
+		return nil, err
+	}
+
+	return df, nil
 }
 
 // FromStructs creates a DataFrame from a slice of structs.
 func (df *DataFrame) FromStructs(data interface{}) error {
+
 	v := reflect.ValueOf(data)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -40,6 +50,7 @@ func (df *DataFrame) FromStructs(data interface{}) error {
 	}
 
 	elemType := v.Type().Elem()
+
 	if elemType.Kind() != reflect.Struct {
 		return fmt.Errorf("data must be a slice of structs")
 	}
@@ -122,37 +133,18 @@ func (df *DataFrame) Head(n ...int) ([]map[string]interface{}, error) {
 	}
 	var result []map[string]interface{}
 	count := 0
-	for id, row := range df.Data {
+	for id := range df.Data {
 		if count >= rows {
 			break
 		}
-		result = append(result, row.(map[string]interface{}))
+		found := df.Index.Search(id) // Search for the key in the BPlusTree
+		if !found {
+			continue
+		}
+		result = append(result, df.Data[id].(map[string]interface{}))
 		count++
 	}
 	return result, nil
-}
-
-func (df *DataFrame) Display(n ...int) error {
-	rows, err := df.Head(n...)
-	if err != nil {
-		return err
-	}
-	if len(rows) == 0 {
-		return nil
-	}
-	columns := make([]string, 0, len(rows[0]))
-	for col := range rows[0] {
-		columns = append(columns, col)
-	}
-	fmt.Println(strings.Join(columns, "\t"))
-	for _, row := range rows {
-		values := make([]string, len(columns))
-		for i, col := range columns {
-			values[i] = fmt.Sprintf("%v", row[col])
-		}
-		fmt.Println(strings.Join(values, "\t"))
-	}
-	return nil
 }
 
 func (df *DataFrame) Tail(n ...int) ([]map[string]interface{}, error) {
@@ -178,6 +170,33 @@ func (df *DataFrame) Tail(n ...int) ([]map[string]interface{}, error) {
 	return result, nil
 }
 
+// Display prints the contents of the DataFrame to the console.
+func (df *DataFrame) Display() error {
+	if len(df.Data) == 0 {
+		return fmt.Errorf("dataframe is empty")
+	}
+
+	// Print the header row
+	firstRow := df.Data[0].(map[string]interface{})
+	var headers []string
+	for col := range firstRow {
+		headers = append(headers, col)
+	}
+	fmt.Println(headers)
+
+	// Print the data rows
+	for _, row := range df.Data {
+		rowMap := row.(map[string]interface{})
+		var record []string
+		for _, col := range headers {
+			record = append(record, fmt.Sprintf("%v", rowMap[col]))
+		}
+		fmt.Println(record)
+	}
+
+	return nil
+}
+
 func (df *DataFrame) Info() error {
 	df.mutex.RLock()
 	defer df.mutex.RUnlock()
@@ -199,32 +218,112 @@ func (df *DataFrame) Info() error {
 	return nil
 }
 
+func mergeStructs(row1, row2 interface{}, newStructType reflect.Type) reflect.Value {
+	newRow := reflect.New(newStructType).Elem()
+	row1Val := reflect.ValueOf(row1)
+	row2Val := reflect.ValueOf(row2)
+
+	for i := 0; i < newStructType.NumField(); i++ {
+		field := newStructType.Field(i)
+		if field.Anonymous {
+			continue
+		}
+
+		var val reflect.Value
+		fieldName := field.Name
+		if strings.HasSuffix(fieldName, "_df") {
+			fieldName = strings.TrimSuffix(fieldName, "_df")
+		} else if strings.HasSuffix(fieldName, "_other") {
+			fieldName = strings.TrimSuffix(fieldName, "_other")
+		}
+
+		if row1Val.Kind() == reflect.Map {
+			val = row1Val.MapIndex(reflect.ValueOf(fieldName))
+		} else if row1Val.Kind() == reflect.Struct {
+			val = row1Val.FieldByName(fieldName)
+		}
+
+		if !val.IsValid() && row2Val.Kind() == reflect.Map {
+			val = row2Val.MapIndex(reflect.ValueOf(fieldName))
+		} else if !val.IsValid() && row2Val.Kind() == reflect.Struct {
+			val = row2Val.FieldByName(fieldName)
+		}
+
+		if val.IsValid() {
+			if val.Type().Kind() == reflect.Interface {
+				val = val.Elem()
+			}
+			if val.Type().AssignableTo(field.Type) {
+				newRow.Field(i).Set(val)
+			} else {
+				newRow.Field(i).Set(reflect.Zero(field.Type))
+			}
+		} else {
+			newRow.Field(i).Set(reflect.Zero(field.Type))
+		}
+	}
+	return newRow
+}
+
 func (df *DataFrame) Join(other *DataFrame, joinType string, keys []string) (*DataFrame, error) {
 	df.mutex.RLock()
 	defer df.mutex.RUnlock()
 	other.mutex.RLock()
 	defer other.mutex.RUnlock()
 
-	result := NewDataFrame()
-	result.Name = df.Name + "_" + other.Name + "_join"
+	// Convert struct fields to slices and rename duplicates
+	dfFields := make([]reflect.StructField, df.StructType.NumField())
+	fieldNames := make(map[string]bool)
+	for i := 0; i < df.StructType.NumField(); i++ {
+		field := df.StructType.Field(i)
+		if fieldNames[field.Name] {
+			field.Name += "_df"
+		}
+		fieldNames[field.Name] = true
+		dfFields[i] = field
+	}
+
+	otherFields := make([]reflect.StructField, other.StructType.NumField())
+	for i := 0; i < other.StructType.NumField(); i++ {
+		field := other.StructType.Field(i)
+		if fieldNames[field.Name] {
+			field.Name += "_other"
+		}
+		fieldNames[field.Name] = true
+		otherFields[i] = field
+	}
+
+	// Define a new struct type that combines the fields of the input structs
+	newStructType := reflect.StructOf(append(dfFields, otherFields...))
+
+	// Create a new slice of the combined struct type
+	newSlice := reflect.MakeSlice(reflect.SliceOf(newStructType), 0, 0)
+
+	// Create a new DataFrame with the combined struct type
+	result := &DataFrame{
+		Name:       df.Name + "_" + other.Name + "_join",
+		StructType: newStructType,
+		Data:       make(map[int]interface{}),
+		Index:      db.NewBPlusTree(),
+	}
 
 	switch joinType {
 	case "inner":
 		for id, row := range df.Data {
 			if otherRow, found := other.Data[id]; found {
-				newRow := mergeRows(row.(map[string]interface{}), otherRow.(map[string]interface{}), df.Name, other.Name)
-				result.InsertRow(id, newRow)
+				newRow := mergeStructs(row, otherRow, newStructType)
+				newSlice = reflect.Append(newSlice, newRow)
 			}
 		}
 	case "left":
 		for id, row := range df.Data {
-			newRow := mergeRows(row.(map[string]interface{}), other.Data[id].(map[string]interface{}), df.Name, other.Name)
-			result.InsertRow(id, newRow)
+			newRow := mergeStructs(row, other.Data[id], newStructType)
+			newSlice = reflect.Append(newSlice, newRow)
 		}
 	case "right":
 		for id, row := range other.Data {
-			newRow := mergeRows(df.Data[id].(map[string]interface{}), row.(map[string]interface{}), df.Name, other.Name)
-			result.InsertRow(id, newRow)
+			newRow := mergeStructs(df.Data[id], row, newStructType)
+			newSlice = reflect.Append(newSlice, newRow)
 		}
 	case "outer":
 		allKeys := make(map[int]struct{})
@@ -235,73 +334,57 @@ func (df *DataFrame) Join(other *DataFrame, joinType string, keys []string) (*Da
 			allKeys[id] = struct{}{}
 		}
 		for id := range allKeys {
-			newRow := mergeRows(df.Data[id].(map[string]interface{}), other.Data[id].(map[string]interface{}), df.Name, other.Name)
-			result.InsertRow(id, newRow)
+			newRow := mergeStructs(df.Data[id], other.Data[id], newStructType)
+			newSlice = reflect.Append(newSlice, newRow)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported join type: %s", joinType)
 	}
 
+	// Populate the result DataFrame with the new slice
+	if err := result.FromStructs(newSlice.Interface()); err != nil {
+		return nil, err
+	}
+
 	return result, nil
 }
 
-func mergeRows(row1, row2 map[string]interface{}, name1, name2 string) map[string]interface{} {
-	newRow := make(map[string]interface{})
-	for k, v := range row1 {
-		newRow[name1+"."+k] = v
-	}
-	for k, v := range row2 {
-		newRow[name2+"."+k] = v
-	}
-	return newRow
-}
-
-// ReadJSONFromString takes a JSON string and a pointer to a struct, populates the struct with the JSON data.
+// ReadJSONFromString takes a JSON string and a pointer to a slice of structs, populates the slice with the JSON data.
 func ReadJSONFromString(jsonData string, v interface{}) (*DataFrame, error) {
-	// Unmarshal the JSON data into the struct
+	// Unmarshal the JSON data into the slice of structs
 	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
 		return nil, err
 	}
 
 	// Ensure v is a slice of structs
-	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, 0)
-	vSlice = reflect.Append(vSlice, reflect.ValueOf(v).Elem())
+	vSlice := reflect.ValueOf(v).Elem()
 
 	// Create a new DataFrame with the populated slice of structs
 	return NewDataFrame(vSlice.Interface())
 }
 
-// ReadJSONFromFile takes a JSON file path and a pointer to a struct, reads the JSON data from the file.
+// ReadJSONFromFile takes a JSON file path and a pointer to a struct, populates the struct with the JSON data.
 func ReadJSONFromFile(jsonFilePath string, v interface{}) (*DataFrame, error) {
+	// Read the JSON file
 	file, err := os.Open(jsonFilePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	fileInfo, err := file.Stat()
+	// Read the file content
+	content, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
 	}
-
-	fileSize := fileInfo.Size()
-	buffer := make([]byte, fileSize)
-
-	_, err = file.Read(buffer)
-	if err != nil {
-		return nil, err
-	}
-
-	jsonData := string(buffer)
 
 	// Unmarshal the JSON data into the struct
-	if err := json.Unmarshal([]byte(jsonData), v); err != nil {
+	if err := json.Unmarshal(content, v); err != nil {
 		return nil, err
 	}
 
-	// Ensure v is a slice of structs
-	vSlice := reflect.MakeSlice(reflect.SliceOf(reflect.TypeOf(v).Elem()), 0, 0)
-	vSlice = reflect.Append(vSlice, reflect.ValueOf(v).Elem())
+	/// Ensure v is a slice of structs
+	vSlice := reflect.ValueOf(v).Elem()
 
 	// Create a new DataFrame with the populated slice of structs
 	return NewDataFrame(vSlice.Interface())
@@ -386,7 +469,7 @@ func readCSV(reader *csv.Reader, v interface{}) (*DataFrame, error) {
 }
 
 // ToCSV writes the contents of a DataFrame to a CSV file.
-func (df *DataFrame) ToCSV(csvFilePath string, v interface{}) error {
+func (df *DataFrame) ToCSV(csvFilePath string) error {
 	// Open the CSV file for writing
 	file, err := os.Create(csvFilePath)
 	if err != nil {
@@ -397,64 +480,180 @@ func (df *DataFrame) ToCSV(csvFilePath string, v interface{}) error {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Get the table name and columns
-	tableName := reflect.TypeOf(v).Elem().Name()
-	rows, err := df.QueryRows("SELECT * FROM " + tableName)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return err
-	}
-
 	// Write the header row
-	if err := writer.Write(columns); err != nil {
+	if len(df.Data) == 0 {
+		return fmt.Errorf("dataframe is empty")
+	}
+
+	firstRow := df.Data[0].(map[string]interface{})
+	var headers []string
+	for col := range firstRow {
+		headers = append(headers, col)
+	}
+	if err := writer.Write(headers); err != nil {
 		return err
 	}
 
 	// Write the data rows
-	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
+	for _, row := range df.Data {
+		rowMap := row.(map[string]interface{})
+		var record []string
+		for _, col := range headers {
+			record = append(record, fmt.Sprintf("%v", rowMap[col]))
 		}
-
-		if err := rows.Scan(valuePtrs...); err != nil {
-			return err
-		}
-
-		record := make([]string, len(columns))
-		for i, val := range values {
-			if val != nil {
-				switch v := val.(type) {
-				case int64:
-					record[i] = strconv.FormatInt(v, 10)
-				case float64:
-					record[i] = strconv.FormatFloat(v, 'f', -1, 64)
-				case bool:
-					record[i] = strconv.FormatBool(v)
-				case time.Time:
-					record[i] = v.Format(time.RFC3339)
-				case []byte:
-					record[i] = string(v)
-				case string:
-					record[i] = v
-				default:
-					record[i] = fmt.Sprintf("%v", v)
-				}
-			} else {
-				record[i] = ""
-			}
-		}
-
 		if err := writer.Write(record); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// Corr calculates the correlation matrix for the numerical columns in the DataFrame.
+func (df *DataFrame) Corr() (*DataFrame, error) {
+	if len(df.Data) == 0 {
+		return nil, errors.New("dataframe is empty")
+	}
+
+	// Extract numerical columns
+	numCols := []string{}
+	for col, val := range df.Data[0].(map[string]interface{}) {
+		if isNumeric(val) {
+			numCols = append(numCols, col)
+		}
+	}
+
+	if len(numCols) == 0 {
+		return nil, errors.New("no numerical columns found")
+	}
+
+	// Initialize correlation matrix
+	corrMatrix := make([][]float64, len(numCols))
+	for i := range corrMatrix {
+		corrMatrix[i] = make([]float64, len(numCols))
+	}
+
+	// Calculate correlations
+	for i, col1 := range numCols {
+		for j, col2 := range numCols {
+			if i == j {
+				corrMatrix[i][j] = 1.0
+			} else if i < j {
+				corr, err := calculateCorrelation(df, col1, col2)
+				if err != nil {
+					return nil, err
+				}
+				corrMatrix[i][j] = corr
+				corrMatrix[j][i] = corr
+			}
+		}
+	}
+
+	// Convert correlation matrix to DataFrame
+	corrData := make(map[int]interface{})
+	for i, row := range corrMatrix {
+		rowMap := map[string]interface{}{}
+		for j, val := range row {
+			rowMap[numCols[j]] = val
+		}
+		corrData[i] = rowMap
+	}
+
+	return &DataFrame{Data: corrData}, nil
+}
+
+// Helper function to check if a value is numeric
+func isNumeric(val interface{}) bool {
+	switch val.(type) {
+	case int, int8, int16, int32, int64, float32, float64:
+		return true
+	default:
+		return false
+	}
+}
+
+// Helper function to calculate the correlation between two columns
+func calculateCorrelation(df *DataFrame, col1, col2 string) (float64, error) {
+	var sumX, sumY, sumXY, sumX2, sumY2 float64
+	var n float64
+
+	for _, row := range df.Data {
+		rowMap := row.(map[string]interface{})
+		x, ok1 := ToFloat64(rowMap[col1])
+		y, ok2 := ToFloat64(rowMap[col2])
+		if !ok1 || !ok2 {
+			return 0, errors.New("non-numeric value encountered")
+		}
+
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumX2 += x * x
+		sumY2 += y * y
+		n++
+	}
+
+	numerator := n*sumXY - sumX*sumY
+	denominator := math.Sqrt((n*sumX2 - sumX*sumX) * (n*sumY2 - sumY*sumY))
+	if denominator == 0 {
+		return 0, errors.New("division by zero in correlation calculation")
+	}
+
+	return numerator / denominator, nil
+}
+
+// Helper function to convert a value to float64
+func ToFloat64(val interface{}) (float64, bool) {
+	switch v := val.(type) {
+	case int:
+		return float64(v), true
+	case int8:
+		return float64(v), true
+	case int16:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	default:
+		return 0, false
+	}
+}
+
+// ToMatrix converts the DataFrame to a 2D slice of float64 and returns the column names.
+func (df *DataFrame) ToMatrix() ([][]float64, []string, error) {
+	if len(df.Data) == 0 {
+		return nil, nil, errors.New("dataframe is empty")
+	}
+
+	// Extract column names
+	firstRow := df.Data[0].(map[string]interface{})
+	var columns []string
+	for col := range firstRow {
+		columns = append(columns, col)
+	}
+
+	// Initialize the matrix
+	matrix := make([][]float64, len(df.Data))
+	for i := range matrix {
+		matrix[i] = make([]float64, len(columns))
+	}
+
+	// Fill the matrix with data
+	for i, row := range df.Data {
+		rowMap := row.(map[string]interface{})
+		for j, col := range columns {
+			val, ok := rowMap[col].(float64)
+			if !ok {
+				return nil, nil, errors.New("non-numeric value encountered")
+			}
+			matrix[i][j] = val
+		}
+	}
+
+	return matrix, columns, nil
 }

@@ -1,23 +1,14 @@
-// This example demonstrates how to use the Tail method to get the bottom rows of a DataFrame.
-//go:build ignoreme
-// +build ignoreme
-
 package main
 
 import (
 	"fmt"
-	"time"
 	"log"
+	"time"
+
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
-
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-	defer dataframe.Close()
 
 	type Person struct {
 		ID        int
@@ -35,10 +26,16 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, _ := dataframe.NewDataFrame(people)
+	df, err := dataframe.NewDataFrame(people)
+	if err != nil {
+		log.Fatalf("Error creating DataFrame: %v", err)
+	}
 
 	// Use the Tail method to get the bottom 5 rows
-	bottomRows, _ := df.Tail()
+	bottomRows, err := df.Tail()
+	if err != nil {
+		log.Fatalf("Error getting bottom rows: %v", err)
+	}
 
 	fmt.Println("Bottom 5 rows:")
 	for _, row := range bottomRows {
@@ -46,7 +43,10 @@ func main() {
 	}
 
 	// Use the Tail method to get the bottom 3 rows
-	bottom3Rows, _ := df.Tail(3)
+	bottom3Rows, err := df.Tail(3)
+	if err != nil {
+		log.Fatalf("Error getting bottom 3 rows: %v", err)
+	}
 
 	fmt.Println("Bottom 3 rows:")
 	for _, row := range bottom3Rows {

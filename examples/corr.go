@@ -18,11 +18,6 @@ type SampleData struct {
 }
 
 func main() {
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-	defer dataframe.Close()
 
 	// CSV data as a string with mixed correlations
 	csvString := `Age,Salary,Experience,Height,Weight,Score
@@ -55,7 +50,10 @@ func main() {
 	}
 
 	// Convert the correlation DataFrame to a 2D slice of float64 and get column names
-	corrMatrix, columns := corrDF.ToMatrix()
+	corrMatrix, columns, err := corrDF.ToMatrix()
+	if err != nil {
+		log.Fatalf("Failed to convert correlation DataFrame to matrix: %v", err)
+	}
 
 	// Plot the correlation matrix
 	viz.PlotCorrMat(corrMatrix, columns)

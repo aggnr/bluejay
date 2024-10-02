@@ -9,12 +9,6 @@ import (
 )
 
 func main() {
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-	defer dataframe.Close()
-
 	type Person struct {
 		ID        int
 		Name      string
@@ -36,11 +30,9 @@ func main() {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
 
-	// Use the Display method to print the top 5 rows
-	fmt.Println("Top 5 rows:")
-	df.Display()
-
-	// Use the Display method to print the top 3 rows
-	fmt.Println("Top 3 rows:")
-	df.Display(3)
+	// Use the Display method to print the DataFrame
+	fmt.Println("DataFrame:")
+	if err := df.Display(); err != nil {
+		log.Fatalf("Error displaying DataFrame: %v", err)
+	}
 }

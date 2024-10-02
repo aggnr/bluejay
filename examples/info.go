@@ -1,21 +1,13 @@
-// This example demonstrates how to use the Info method to get details about a DataFrame.
-//go:build ignoreme
-// +build ignoreme
-
 package main
 
 import (
-	"time"
 	"log"
+	"time"
+
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-	defer dataframe.Close()
 
 	type Person struct {
 		ID        int
@@ -33,8 +25,13 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, _ := dataframe.NewDataFrame(people)
+	df, err := dataframe.NewDataFrame(people)
+	if err != nil {
+		log.Fatalf("Error creating DataFrame: %v", err)
+	}
 
 	// Use the Info method to get details about the DataFrame
-	df.Info()
+	if err := df.Info(); err != nil {
+		log.Fatalf("Error getting DataFrame info: %v", err)
+	}
 }

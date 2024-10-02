@@ -1,8 +1,8 @@
 package db
 
 import (
-"fmt"
 "sync"
+//"fmt"
 )
 
 const (
@@ -78,15 +78,28 @@ func (tree *BPlusTree) insertNonFull(node *BPlusTreeNode, key int) {
 
 func (tree *BPlusTree) splitChild(parent *BPlusTreeNode, index int) {
 	child := parent.children[index]
-	newChild := &BPlusTreeNode{
-		keys:     append([]int(nil), child.keys[maxKeys/2+1:]...),
-		children: append([]*BPlusTreeNode(nil), child.children[maxKeys/2+1:]...),
-		isLeaf:   child.isLeaf,
-	}
-	child.keys = child.keys[:maxKeys/2]
-	child.children = child.children[:maxKeys/2+1]
+	mid := len(child.keys) / 2
 
-	parent.keys = append(parent.keys[:index], append([]int{child.keys[maxKeys/2]}, parent.keys[index:]...)...)
+	// Store the middle key before modifying the child.keys slice
+	midKey := child.keys[mid]
+
+	newChild := &BPlusTreeNode{
+		keys:   append([]int(nil), child.keys[mid+1:]...),
+		isLeaf: child.isLeaf,
+	}
+
+	if len(child.children) > 0 {
+		newChild.children = append([]*BPlusTreeNode(nil), child.children[mid+1:]...)
+		child.children = child.children[:mid+1]
+	}
+
+	child.keys = child.keys[:mid]
+
+	if len(parent.keys) == 0 {
+		parent.keys = append(parent.keys, midKey)
+	} else {
+		parent.keys = append(parent.keys[:index], append([]int{midKey}, parent.keys[index:]...)...)
+	}
 	parent.children = append(parent.children[:index+1], append([]*BPlusTreeNode{newChild}, parent.children[index+1:]...)...)
 
 	if child.isLeaf {

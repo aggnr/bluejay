@@ -8,12 +8,6 @@ import (
 )
 
 func main() {
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-	defer dataframe.Close()
-
 	type Person struct {
 		Name      string
 		Age       int
@@ -27,8 +21,8 @@ func main() {
 	}
 
 	// Create a new DataFrame and populate it with the slice of structs
-	df := dataframe.NewDataFrame()
-	if err := df.FromStructs(people); err != nil {
+	df, err := dataframe.NewDataFrame(people)
+	if err != nil {
 		log.Fatalf("Error creating DataFrame: %v", err)
 	}
 

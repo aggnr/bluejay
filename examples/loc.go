@@ -1,22 +1,13 @@
-// Description: This example demonstrates how to retrieve rows from a DataFrame using the Loc method.
-//go:build ignoreme
-// +build ignoreme
-
 package main
 
 import (
 	"fmt"
 	"log"
+
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
-
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-	defer dataframe.Close()
 
 	type Person struct {
 		Name      string
@@ -30,18 +21,27 @@ func main() {
 		{"Jane", 25, 60000.75, false},
 	}
 
-	df, _ := dataframe.NewDataFrame(people)
+	df, err := dataframe.NewDataFrame(people)
+	if err != nil {
+		log.Fatalf("Error creating DataFrame: %v", err)
+	}
 
-	rows, _ := df.Loc(2)
+	rows, err := df.Loc(1)
+	if err != nil {
+		log.Fatalf("Error retrieving rows for index 1: %v", err)
+	}
 
-	fmt.Println("Retrieved rows for index 2:")
+	fmt.Println("Retrieved rows for index 1:")
 	for _, row := range rows {
 		fmt.Println(row)
 	}
 
-	rows, _ = df.Loc(1, 2)
+	rows, err = df.Loc(0, 1)
+	if err != nil {
+		log.Fatalf("Error retrieving rows for index 0 and 1: %v", err)
+	}
 
-	fmt.Println("Retrieved rows for index 1 and 2:")
+	fmt.Println("Retrieved rows for index 0 and 1:")
 	for _, row := range rows {
 		fmt.Println(row)
 	}

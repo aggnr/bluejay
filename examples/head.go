@@ -1,24 +1,14 @@
-// This example demonstrates how to use the Head method to get the top rows of a DataFrame.
-//go:build ignoreme
-// +build ignoreme
-
 package main
 
 import (
 	"fmt"
-	"time"
 	"log"
+	"time"
+
 	"github.com/aggnr/bluejay/dataframe"
 )
 
 func main() {
-
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
-	}
-	defer dataframe.Close()
-
 	type Person struct {
 		ID        int
 		Name      string
@@ -35,10 +25,16 @@ func main() {
 		{ID: 6, Name: "Frank", Age: 40, Birthdate: time.Now()},
 	}
 
-	df, _ := dataframe.NewDataFrame(people)
+	df, err := dataframe.NewDataFrame(people)
+	if err != nil {
+		log.Fatalf("Error creating DataFrame: %v", err)
+	}
 
 	// Use the Head method to get the top 5 rows
-	topRows, _ := df.Head()
+	topRows, err := df.Head()
+	if err != nil {
+		log.Fatalf("Error getting top rows: %v", err)
+	}
 
 	fmt.Println("Top 5 rows:")
 	for _, row := range topRows {
@@ -46,7 +42,10 @@ func main() {
 	}
 
 	// Use the Head method to get the top 3 rows
-	top3Rows, _ := df.Head(3)
+	top3Rows, err := df.Head(3)
+	if err != nil {
+		log.Fatalf("Error getting top 3 rows: %v", err)
+	}
 
 	fmt.Println("Top 3 rows:")
 	for _, row := range top3Rows {

@@ -1,25 +1,34 @@
 package main
 
 import (
-	"math/rand"
-	"time"
 	"log"
-	"github.com/aggnr/bluejay/viz"
+	"math/rand"
+	"sort"
+	"time"
 	"github.com/aggnr/bluejay/dataframe"
+	"github.com/aggnr/bluejay/viz"
 )
 
 func main() {
-	// Initialize the global database connection
-	if err := dataframe.Init(); err != nil {
-		log.Fatalf("Error initializing database: %v", err)
+	type DataPoint struct {
+		Time  float64
+		Value float64
 	}
-	defer dataframe.Close()
 
-	// Initial x-axis data points
-	xData := []float64{0, 1, 2, 3, 4, 5}
+	// Initial data points
+	dataPoints := []DataPoint{
+		{0, 0.1},
+		{1, 0.5},
+		{2, 0.9},
+		{3, 0.4},
+		{4, 0.7},
+		{5, 1.0},
+	}
 
-	// Initial y-axis data points
-	yData := []float64{0.1, 0.5, 0.9, 0.4, 0.7, 1.0}
+	df, err := dataframe.NewDataFrame(dataPoints)
+	if err != nil {
+		log.Fatalf("Error creating DataFrame: %v", err)
+	}
 
 	title := "Dynamic Plot"
 
@@ -28,14 +37,45 @@ func main() {
 
 	// Goroutine to generate new data points every second and send them to the channel
 	go func() {
+		newTime := dataPoints[len(dataPoints)-1].Time + 1
 		for range time.Tick(time.Second) {
-			newX := float64(len(xData))
-			newY := rand.Float64()
-			dataChan <- [2]float64{newX, newY}
-			xData = append(xData, newX)
-			yData = append(yData, newY)
+			newValue := rand.Float64()
+			dataChan <- [2]float64{newTime, newValue}
+			dataPoints = append(dataPoints, DataPoint{newTime, newValue})
+			newTime += 1
 		}
 	}()
+
+	// Extract data for plotting
+	xData := []float64{}
+	yData := []float64{}
+	for _, row := range df.Data {
+		rowMap := row.(map[string]interface{})
+		xVal, ok1 := dataframe.ToFloat64(rowMap["Time"])
+		yVal, ok2 := dataframe.ToFloat64(rowMap["Value"])
+		if (!ok1 || !ok2) {
+			log.Fatalf("Non-numeric value encountered")
+		}
+		xData = append(xData, xVal)
+		yData = append(yData, yVal)
+	}
+
+	// Sort xData and rearrange yData accordingly
+	type dataPair struct {
+		x float64
+		y float64
+	}
+	pairs := make([]dataPair, len(xData))
+	for i := range xData {
+		pairs[i] = dataPair{xData[i], yData[i]}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].x < pairs[j].x
+	})
+	for i := range pairs {
+		xData[i] = pairs[i].x
+		yData[i] = pairs[i].y
+	}
 
 	// Call ShowPlot to display the plot with initial data and dynamic updates
 	viz.ShowPlot(xData, yData, "Time (s)", "Value", title, dataChan)
