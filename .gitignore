@@ -38,3 +38,6 @@ go.work.sum
 # Data files
 *.csv
 *.json
+
+# Data directory
+data/
