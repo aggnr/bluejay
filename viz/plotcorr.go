@@ -9,12 +9,21 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 )
 
 // PlotCorrMat displays the correlation matrix using the fyne package
 func PlotCorrMat(matrix [][]float64, columns []string) {
 	a := app.New()
+	a.Settings().SetTheme(theme.LightTheme())
 	w := a.NewWindow("Correlation Matrix")
+
+	// Calculate the dynamic width and height based on the number of columns and rows
+	columnWidth := 50
+	rowHeight := 50
+	padding := 20
+	dynamicWidth := (len(columns) + 1) * columnWidth + 2 * padding
+	dynamicHeight := (len(matrix) + 1) * rowHeight + 2 * padding
 
 	// Create a grid for the matrix
 	grid := container.NewGridWithColumns(len(columns) + 1)
@@ -40,7 +49,7 @@ func PlotCorrMat(matrix [][]float64, columns []string) {
 			value := matrix[i][j]
 			col := getColorForValue(value)
 			rect := canvas.NewRectangle(col)
-			rect.SetMinSize(fyne.NewSize(50, 50))
+			rect.SetMinSize(fyne.NewSize(float32(columnWidth), float32(rowHeight)))
 
 			// Create a text label for the value
 			label := canvas.NewText(fmt.Sprintf("%.2f", value), color.White)
@@ -59,7 +68,7 @@ func PlotCorrMat(matrix [][]float64, columns []string) {
 	content := container.NewVBox(grid, legend)
 
 	w.SetContent(content)
-	w.Resize(fyne.NewSize(600, 700))
+	w.Resize(fyne.NewSize(float32(dynamicWidth), float32(dynamicHeight)))
 	w.ShowAndRun()
 }
 
