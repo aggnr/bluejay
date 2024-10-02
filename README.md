@@ -76,7 +76,8 @@ Here are some examples demonstrating how to use BlueJay:
 - [info](examples/info.go) - This example demonstrates how to display summary information about a DataFrame.
 - [loc](examples/loc.go) - This example demonstrates how to select specific rows and columns from a DataFrame.
 - [readcsv](examples/readcsv.go) - This example demonstrates how to read data from a CSV file into a DataFrame.
-- [readjson](examples/readjson.go) - This example demonstrates how to read data from a JSON file into a DataFrame.
+- [readjsonfromfile.go](examples/readjsonfromfile.go) - This example demonstrates how to read data from a JSON file into a DataFrame.
+- [readjsonfromstring.go](examples/readjsonfromstring.go) - This example demonstrates how to read data from a JSON string into a DataFrame.
 - [tail](examples/tail.go) - This example demonstrates how to display the last few rows of a DataFrame.
 
 ### Advanced Usage
