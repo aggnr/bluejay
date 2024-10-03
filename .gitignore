@@ -41,3 +41,6 @@ go.work.sum
 
 # Data directory
 data/
+
+# Profile files
+*.prof

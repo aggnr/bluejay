@@ -1,233 +1,341 @@
 package db
 
 import (
+	"bytes"
+	"encoding/gob"
 	"sync"
 )
 
-const (
-	maxKeys = 4 // Maximum number of keys in a node
-)
-
 type BPlusTreeNode struct {
-	keys     []int
-	values   [][2]int // Store tuples of (rowChunkIndex, columnChunkIndex)
-	children []*BPlusTreeNode
-	isLeaf   bool
-	next     *BPlusTreeNode
-	mutex    sync.RWMutex
+	Keys     []int
+	Children []*BPlusTreeNode
+	IsLeaf   bool
+	Next     *BPlusTreeNode
+	Mutex    sync.RWMutex
 }
 
 type BPlusTree struct {
-	root  *BPlusTreeNode
-	mutex sync.RWMutex
+	Root  *BPlusTreeNode
+	Order int
+	Mutex sync.RWMutex
 }
 
-func NewBPlusTree() *BPlusTree {
+// NewBPlusTree creates a new B+Tree with a dynamically set order.
+func NewBPlusTree(size int) *BPlusTree {
+	order := calculateOrder(size)
 	root := &BPlusTreeNode{
-		keys:     make([]int, 0, maxKeys),
-		values:   make([][2]int, 0, maxKeys),
-		children: make([]*BPlusTreeNode, 0, maxKeys+1),
-		isLeaf:   true,
+		Keys:     make([]int, 0, order),
+		Children: make([]*BPlusTreeNode, 0, order+1),
+		IsLeaf:   true,
 	}
-	return &BPlusTree{root: root}
+	return &BPlusTree{Root: root, Order: order}
 }
 
-func (tree *BPlusTree) Insert(key, rowChunkIndex, columnChunkIndex int) {
-	tree.mutex.Lock()
-	defer tree.mutex.Unlock()
+// calculateOrder determines the order of the B+Tree based on the size.
+func calculateOrder(size int) int {
+	// Assuming each key-pointer pair is 16 bytes and the block size is 4 KB
+	const blockSize = 4096
+	const keyPointerSize = 16
 
-	root := tree.root
-	if len(root.keys) == maxKeys {
+	// Calculate the maximum number of key-pointer pairs that fit in a block
+	maxOrder := blockSize / keyPointerSize
+
+	// Ensure the order is within the range of 32 to 256
+	if maxOrder > 256 {
+		maxOrder = 256
+	} else if maxOrder < 32 {
+		maxOrder = 32
+	}
+
+	// Adjust the order based on the size
+	if size < 1000 {
+		return maxOrder / 4
+	} else if size < 10000 {
+		return maxOrder / 2
+	} else {
+		return maxOrder
+	}
+}
+
+func (tree *BPlusTree) Insert(key int) {
+	tree.Mutex.Lock()
+	defer tree.Mutex.Unlock()
+
+	root := tree.Root
+	if len(root.Keys) == 0 {
+		root.Keys = append(root.Keys, key)
+		return
+	}
+
+	if len(root.Keys) == tree.Order {
 		newRoot := &BPlusTreeNode{
-			children: []*BPlusTreeNode{root},
+			Children: []*BPlusTreeNode{root},
 		}
 		tree.splitChild(newRoot, 0)
-		tree.root = newRoot
+		tree.Root = newRoot
 	}
-	tree.insertNonFull(tree.root, key, rowChunkIndex, columnChunkIndex)
+	tree.insertNonFull(tree.Root, key)
 }
 
-func (tree *BPlusTree) insertNonFull(node *BPlusTreeNode, key, rowChunkIndex, columnChunkIndex int) {
-	node.mutex.Lock()
-	defer node.mutex.Unlock()
+func (tree *BPlusTree) insertNonFull(node *BPlusTreeNode, key int) {
+	node.Mutex.Lock()
+	defer node.Mutex.Unlock()
 
-	if node.isLeaf {
-		i := len(node.keys) - 1
-		node.keys = append(node.keys, 0)
-		node.values = append(node.values, [2]int{})
-		for i >= 0 && key < node.keys[i] {
-			node.keys[i+1] = node.keys[i]
-			node.values[i+1] = node.values[i]
-			i--
+	if node.IsLeaf {
+		i := 0
+		for i < len(node.Keys) && node.Keys[i] < key {
+			i++
 		}
-		node.keys[i+1] = key
-		node.values[i+1] = [2]int{rowChunkIndex, columnChunkIndex}
+		node.Keys = append(node.Keys[:i], append([]int{key}, node.Keys[i:]...)...)
 	} else {
-		i := len(node.keys) - 1
-		for i >= 0 && key < node.keys[i] {
-			i--
+		i := 0
+		for i < len(node.Keys) && node.Keys[i] < key {
+			i++
 		}
-		i++
-		node.mutex.Unlock()
-		node.children[i].mutex.Lock()
-		if len(node.children[i].keys) == maxKeys {
-			node.children[i].mutex.Unlock()
+		child := node.Children[i]
+		child.Mutex.Lock()
+		if len(child.Keys) == tree.Order {
+			child.Mutex.Unlock()
 			tree.splitChild(node, i)
-			if key > node.keys[i] {
+			if key > node.Keys[i] {
 				i++
 			}
 		} else {
-			node.children[i].mutex.Unlock()
+			child.Mutex.Unlock()
 		}
-		node.mutex.Lock()
-		tree.insertNonFull(node.children[i], key, rowChunkIndex, columnChunkIndex)
+		tree.insertNonFull(node.Children[i], key)
 	}
 }
 
 func (tree *BPlusTree) splitChild(parent *BPlusTreeNode, index int) {
-	child := parent.children[index]
-	mid := len(child.keys) / 2
-
-	midKey := child.keys[mid]
-	midValue := child.values[mid]
+	child := parent.Children[index]
+	mid := len(child.Keys) / 2
+	midKey := child.Keys[mid]
 
 	newChild := &BPlusTreeNode{
-		keys:     append([]int(nil), child.keys[mid+1:]...),
-		values:   append([][2]int(nil), child.values[mid+1:]...),
-		isLeaf:   child.isLeaf,
+		Keys:   append([]int(nil), child.Keys[mid+1:]...),
+		IsLeaf: child.IsLeaf,
 	}
 
-	if !child.isLeaf {
-		newChild.children = append([]*BPlusTreeNode(nil), child.children[mid+1:]...)
-		child.children = child.children[:mid+1]
+	if len(child.Children) > 0 {
+		newChild.Children = append([]*BPlusTreeNode(nil), child.Children[mid+1:]...)
+		child.Children = child.Children[:mid+1]
 	}
 
-	child.keys = child.keys[:mid]
-	child.values = child.values[:mid]
+	child.Keys = child.Keys[:mid]
 
-	parent.keys = append(parent.keys[:index], append([]int{midKey}, parent.keys[index:]...)...)
-	parent.values = append(parent.values[:index], append([][2]int{midValue}, parent.values[index:]...)...)
-	parent.children = append(parent.children[:index+1], append([]*BPlusTreeNode{newChild}, parent.children[index+1:]...)...)
+	if len(parent.Keys) == 0 {
+		parent.Keys = append(parent.Keys, midKey)
+	} else {
+		parent.Keys = append(parent.Keys[:index], append([]int{midKey}, parent.Keys[index:]...)...)
+	}
+	parent.Children = append(parent.Children[:index+1], append([]*BPlusTreeNode{newChild}, parent.Children[index+1:]...)...)
 
-	if child.isLeaf {
-		newChild.next = child.next
-		child.next = newChild
+	if child.IsLeaf {
+		newChild.Next = child.Next
+		child.Next = newChild
 	}
 }
 
-func (tree *BPlusTree) Search(key int) ([2]int, bool) {
-	tree.mutex.RLock()
-	defer tree.mutex.RUnlock()
-	return tree.search(tree.root, key)
+func (tree *BPlusTree) Search(key int) bool {
+	tree.Mutex.RLock()
+	defer tree.Mutex.RUnlock()
+	return tree.search(tree.Root, key)
 }
 
-func (tree *BPlusTree) search(node *BPlusTreeNode, key int) ([2]int, bool) {
-	node.mutex.RLock()
-	defer node.mutex.RUnlock()
+func (tree *BPlusTree) search(node *BPlusTreeNode, key int) bool {
+	node.Mutex.RLock()
+	defer node.Mutex.RUnlock()
 
 	i := 0
-	for i < len(node.keys) && key > node.keys[i] {
+	for i < len(node.Keys) && key > node.Keys[i] {
 		i++
 	}
-	if i < len(node.keys) && key == node.keys[i] {
-		return node.values[i], true
+	if i < len(node.Keys) && key == node.Keys[i] {
+		return true
 	}
-	if node.isLeaf {
-		return [2]int{}, false
+	if node.IsLeaf {
+		return false
 	}
-	return tree.search(node.children[i], key)
+	return tree.search(node.Children[i], key)
 }
 
 func (tree *BPlusTree) Delete(key int) {
-	tree.mutex.Lock()
-	defer tree.mutex.Unlock()
-	tree.delete(tree.root, key)
+	tree.Mutex.Lock()
+	defer tree.Mutex.Unlock()
+	tree.delete(tree.Root, key)
 }
 
 func (tree *BPlusTree) delete(node *BPlusTreeNode, key int) {
-	node.mutex.Lock()
-	defer node.mutex.Unlock()
+	node.Mutex.Lock()
+	defer node.Mutex.Unlock()
 
 	i := 0
-	for i < len(node.keys) && key > node.keys[i] {
+	for i < len(node.Keys) && key > node.Keys[i] {
 		i++
 	}
 
-	if node.isLeaf {
-		if i < len(node.keys) && node.keys[i] == key {
-			node.keys = append(node.keys[:i], node.keys[i+1:]...)
-			node.values = append(node.values[:i], node.values[i+1:]...)
+	if node.IsLeaf {
+		if i < len(node.Keys) && node.Keys[i] == key {
+			node.Keys = append(node.Keys[:i], node.Keys[i+1:]...)
 		}
 	} else {
-		if i < len(node.keys) && node.keys[i] == key {
-			if len(node.children[i].keys) >= maxKeys/2 {
-				// Handle deletion from internal node
+		if i < len(node.Keys) && node.Keys[i] == key {
+			if len(node.Children[i].Keys) > tree.Order/2 {
+				node.Keys[i] = tree.getPredecessor(node.Children[i])
+				tree.delete(node.Children[i], node.Keys[i])
+			} else if len(node.Children[i+1].Keys) > tree.Order/2 {
+				node.Keys[i] = tree.getSuccessor(node.Children[i+1])
+				tree.delete(node.Children[i+1], node.Keys[i])
 			} else {
-				// Handle merging or borrowing
+				tree.mergeChildren(node, i)
+				tree.delete(node.Children[i], key)
 			}
 		} else {
-			if len(node.children[i].keys) < maxKeys/2 {
+			if len(node.Children[i].Keys) == tree.Order/2 {
 				tree.fixChild(node, i)
 			}
-			tree.delete(node.children[i], key)
+			tree.delete(node.Children[i], key)
 		}
 	}
 }
 
+func (tree *BPlusTree) getPredecessor(node *BPlusTreeNode) int {
+	for !node.IsLeaf {
+		node = node.Children[len(node.Children)-1]
+	}
+	return node.Keys[len(node.Keys)-1]
+}
+
+func (tree *BPlusTree) getSuccessor(node *BPlusTreeNode) int {
+	for !node.IsLeaf {
+		node = node.Children[0]
+	}
+	return node.Keys[0]
+}
+
 func (tree *BPlusTree) fixChild(parent *BPlusTreeNode, index int) {
-	child := parent.children[index]
-	if index > 0 && len(parent.children[index-1].keys) > maxKeys/2 {
-		leftSibling := parent.children[index-1]
-		child.keys = append([]int{parent.keys[index-1]}, child.keys...)
-		child.values = append([][2]int{parent.values[index-1]}, child.values...)
-		if !child.isLeaf {
-			child.children = append([]*BPlusTreeNode{leftSibling.children[len(leftSibling.children)-1]}, child.children...)
-			leftSibling.children = leftSibling.children[:len(leftSibling.children)-1]
+	child := parent.Children[index]
+	if index > 0 && len(parent.Children[index-1].Keys) > tree.Order/2 {
+		leftSibling := parent.Children[index-1]
+		child.Keys = append([]int{parent.Keys[index-1]}, child.Keys...)
+		parent.Keys[index-1] = leftSibling.Keys[len(leftSibling.Keys)-1]
+		leftSibling.Keys = leftSibling.Keys[:len(leftSibling.Keys)-1]
+		if len(leftSibling.Children) > 0 {
+			child.Children = append([]*BPlusTreeNode{leftSibling.Children[len(leftSibling.Children)-1]}, child.Children...)
+			leftSibling.Children = leftSibling.Children[:len(leftSibling.Children)-1]
 		}
-		parent.keys[index-1] = leftSibling.keys[len(leftSibling.keys)-1]
-		parent.values[index-1] = leftSibling.values[len(leftSibling.values)-1]
-		leftSibling.keys = leftSibling.keys[:len(leftSibling.keys)-1]
-		leftSibling.values = leftSibling.values[:len(leftSibling.values)-1]
-	} else if index < len(parent.children)-1 && len(parent.children[index+1].keys) > maxKeys/2 {
-		rightSibling := parent.children[index+1]
-		child.keys = append(child.keys, parent.keys[index])
-		child.values = append(child.values, parent.values[index])
-		if !child.isLeaf {
-			child.children = append(child.children, rightSibling.children[0])
-			rightSibling.children = rightSibling.children[1:]
+	} else if index < len(parent.Children)-1 && len(parent.Children[index+1].Keys) > tree.Order/2 {
+		rightSibling := parent.Children[index+1]
+		child.Keys = append(child.Keys, parent.Keys[index])
+		parent.Keys[index] = rightSibling.Keys[0]
+		rightSibling.Keys = rightSibling.Keys[1:]
+		if len(rightSibling.Children) > 0 {
+			child.Children = append(child.Children, rightSibling.Children[0])
+			rightSibling.Children = rightSibling.Children[1:]
 		}
-		parent.keys[index] = rightSibling.keys[0]
-		parent.values[index] = rightSibling.values[0]
-		rightSibling.keys = rightSibling.keys[1:]
-		rightSibling.values = rightSibling.values[1:]
 	} else {
-		if index < len(parent.children)-1 {
-			tree.mergeChildren(parent, index)
-		} else {
+		if index > 0 {
 			tree.mergeChildren(parent, index-1)
+		} else {
+			tree.mergeChildren(parent, index)
 		}
 	}
 }
 
 func (tree *BPlusTree) mergeChildren(parent *BPlusTreeNode, index int) {
-	leftChild := parent.children[index]
-	rightChild := parent.children[index+1]
+	leftChild := parent.Children[index]
+	rightChild := parent.Children[index+1]
 
-	leftChild.keys = append(leftChild.keys, parent.keys[index])
-	leftChild.values = append(leftChild.values, parent.values[index])
-	leftChild.keys = append(leftChild.keys, rightChild.keys...)
-	leftChild.values = append(leftChild.values, rightChild.values...)
-	leftChild.children = append(leftChild.children, rightChild.children...)
+	leftChild.Keys = append(leftChild.Keys, parent.Keys[index])
+	leftChild.Keys = append(leftChild.Keys, rightChild.Keys...)
+	leftChild.Children = append(leftChild.Children, rightChild.Children...)
 
-	parent.keys = append(parent.keys[:index], parent.keys[index+1:]...)
-	parent.values = append(parent.values[:index], parent.values[index+1:]...)
-	parent.children = append(parent.children[:index+1], parent.children[index+2:]...)
+	parent.Keys = append(parent.Keys[:index], parent.Keys[index+1:]...)
+	parent.Children = append(parent.Children[:index+1], parent.Children[index+2:]...)
 
-	if leftChild.isLeaf {
-		leftChild.next = rightChild.next
+	if leftChild.IsLeaf {
+		leftChild.Next = rightChild.Next
 	}
 
-	if parent == tree.root && len(parent.keys) == 0 {
-		tree.root = leftChild
+	if parent == tree.Root && len(parent.Keys) == 0 {
+		tree.Root = leftChild
 	}
+}
+
+func (node *BPlusTreeNode) MarshalBinary() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(node.Keys); err != nil {
+		return nil, err
+	}
+	if err := enc.Encode(node.Children); err != nil {
+		return nil, err
+	}
+	if err := enc.Encode(node.IsLeaf); err != nil {
+		return nil, err
+	}
+	if node.Next != nil {
+		if err := enc.Encode(true); err != nil {
+			return nil, err
+		}
+		if err := enc.Encode(node.Next); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := enc.Encode(false); err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+func (node *BPlusTreeNode) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	if err := dec.Decode(&node.Keys); err != nil {
+		return err
+	}
+	if err := dec.Decode(&node.Children); err != nil {
+		return err
+	}
+	if err := dec.Decode(&node.IsLeaf); err != nil {
+		return err
+	}
+	var hasNext bool
+	if err := dec.Decode(&hasNext); err != nil {
+		return err
+	}
+	if hasNext {
+		node.Next = &BPlusTreeNode{}
+		if err := dec.Decode(node.Next); err != nil {
+			return err
+		}
+	} else {
+		node.Next = nil
+	}
+	return nil
+}
+
+func (tree *BPlusTree) MarshalBinary() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(tree.Root); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (tree *BPlusTree) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	if err := dec.Decode(&tree.Root); err != nil {
+		return err
+	}
+	return nil
+}
+
+func init() {
+	gob.Register(&BPlusTree{})
+	gob.Register(&BPlusTreeNode{})
 }

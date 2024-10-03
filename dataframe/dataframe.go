@@ -6,80 +6,86 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sync"
 	"github.com/aggnr/bluejay/db" // Import the db package
 )
 
 const (
-	defaultRowChunkSize    = 10000 // Default size of each row chunk
-	defaultColumnChunkSize = 10    // Default size of each column chunk
+	treePercentage = 0.01 // 1% of total rows
+	chunkSize      = 1000 // Number of records per chunk
+	chunkDir       = "data" // Directory to store chunks
+	maxCacheSize   = 1 << 30 // 1GB
 )
 
 type DataFrame struct {
-	mutex          sync.RWMutex
-	Columns        map[string][]interface{}
-	Index          *db.BPlusTree // Use BPlusTree from db package
-	rowChunks      map[int]string
-	columnChunks   map[int]string
-	filePath       string
-	storageOnDisk  bool // New flag to determine storage type
-	StructType     reflect.Type // Add StructType field
-	rowChunkSize   int
-	columnChunkSize int
-	inMemoryChunks map[int]map[string][]interface{} // Add in-memory chunks map
+	Name       string
+	StructType reflect.Type
+	Indexes    []*db.BPlusTree // Use multiple BPlusTrees
+	mutex      sync.RWMutex
+	numTrees   int
+	chunkDir   string
+	chunkCount int
+	cache      map[int]map[int]interface{}
+	cacheSize  int
 }
 
-func NewDataFrame(data interface{}, filePath string, storageOnDisk bool) (*DataFrame, error) {
-	rowChunkSize, columnChunkSize := calculateChunkSizes(data)
-
-	df := &DataFrame{
-		Columns:        make(map[string][]interface{}),
-		Index:          db.NewBPlusTree(), // Initialize BPlusTree
-		rowChunks:      make(map[int]string),
-		columnChunks:   make(map[int]string),
-		filePath:       filePath,
-		storageOnDisk:  storageOnDisk,
-		StructType:     reflect.TypeOf(data).Elem(), // Initialize StructType
-		rowChunkSize:   rowChunkSize,
-		columnChunkSize: columnChunkSize,
-	}
-
-	if err := df.FromStructs(data); err != nil {
-		return nil, err
-	}
-
-	if storageOnDisk {
-		if err := df.SaveChunksToDisk(); err != nil {
-			return nil, err
-		}
-	}
-
-	return df, nil
+func init() {
+	gob.Register(&db.BPlusTree{})
+	gob.Register(&db.BPlusTreeNode{})
+	gob.Register(map[string]interface{}{})
 }
 
-func calculateChunkSizes(data interface{}) (int, int) {
+func NewDataFrame(data interface{}) (*DataFrame, error) {
 	v := reflect.ValueOf(data)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 
 	if v.Len() == 0 {
-		return defaultRowChunkSize, defaultColumnChunkSize
+		return nil, fmt.Errorf("data slice is empty")
 	}
 
-	// Example logic to calculate chunk sizes based on data size
-	rowChunkSize := defaultRowChunkSize
-	columnChunkSize := defaultColumnChunkSize
-
-	if v.Len() > 100000 {
-		rowChunkSize = 20000
-		columnChunkSize = 20
-	} else if v.Len() > 50000 {
-		rowChunkSize = 15000
-		columnChunkSize = 15
+	numTrees := int(float64(v.Len()) * treePercentage)
+	if numTrees == 0 {
+		numTrees = 1 // Ensure at least one tree
 	}
 
-	return rowChunkSize, columnChunkSize
+	df := &DataFrame{
+		Indexes:  make([]*db.BPlusTree, numTrees), // Initialize multiple BPlusTrees
+		numTrees: numTrees,
+		chunkDir: chunkDir,
+		cache:    make(map[int]map[int]interface{}),
+	}
+
+	if err := df.createChunkDir(); err != nil {
+		return nil, err
+	}
+
+	for i := 0; i < numTrees; i++ {
+		df.Indexes[i] = db.NewBPlusTree(v.Len())
+	}
+
+	if err := df.FromStructs(data); err != nil {
+		return nil, err
+	}
+
+	// Set a finalizer to ensure Close is called when df goes out of scope
+	runtime.SetFinalizer(df, func(df *DataFrame) {
+		df.Close()
+	})
+
+	return df, nil
+}
+
+// createChunkDir ensures the chunk directory exists.
+func (df *DataFrame) createChunkDir() error {
+	if _, err := os.Stat(df.chunkDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(df.chunkDir, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create chunk directory: %v", err)
+		}
+	}
+	return nil
 }
 
 // FromStructs creates a DataFrame from a slice of structs.
@@ -94,242 +100,168 @@ func (df *DataFrame) FromStructs(data interface{}) error {
 	}
 
 	elemType := v.Type().Elem()
+
 	if elemType.Kind() != reflect.Struct {
 		return fmt.Errorf("data must be a slice of structs")
 	}
 
-	var wg sync.WaitGroup
-	numWorkers := 100 // Number of concurrent workers
-	chunkSize := (v.Len() + numWorkers - 1) / numWorkers
+	df.StructType = elemType
+	df.Name = elemType.Name()
 
-	for i := 0; i < numWorkers; i++ {
-		start := i * chunkSize
-		end := start + chunkSize
-		if end > v.Len() {
-			end = v.Len()
+	rows := make(map[int]interface{})
+	for i := 0; i < v.Len(); i++ {
+		structVal := v.Index(i)
+		values := make(map[string]interface{})
+		for j := 0; j < structVal.NumField(); j++ {
+			values[structVal.Type().Field(j).Name] = structVal.Field(j).Interface()
 		}
-
-		wg.Add(1)
-		go func(start, end int) {
-			defer wg.Done()
-			for i := start; i < end; i++ {
-				structVal := v.Index(i)
-				for j := 0; j < structVal.NumField(); j++ {
-					fieldName := structVal.Type().Field(j).Name
-					df.mutex.Lock()
-					df.Columns[fieldName] = append(df.Columns[fieldName], structVal.Field(j).Interface())
-					df.mutex.Unlock()
-				}
-				rowChunkIndex := i / df.rowChunkSize
-				columnChunkIndex := structVal.NumField() / df.columnChunkSize
-				df.Index.Insert(i, rowChunkIndex, columnChunkIndex)
-			}
-		}(start, end)
+		rows[i] = values
 	}
 
-	wg.Wait()
-
-	if df.storageOnDisk {
-		return df.SaveChunksToDisk()
-	}
-
+	df.InsertRows(rows)
 	return nil
 }
 
+// InsertRows inserts multiple rows into the DataFrame concurrently.
+func (df *DataFrame) InsertRows(rows map[int]interface{}) {
+	var wg sync.WaitGroup
+
+	for id, row := range rows {
+		wg.Add(1)
+		go func(id int, row interface{}) {
+			defer wg.Done()
+			df.InsertRow(id, row)
+		}(id, row)
+	}
+	wg.Wait()
+}
 
 func (df *DataFrame) InsertRow(id int, row interface{}) {
 	df.mutex.Lock()
 	defer df.mutex.Unlock()
 
-	structVal := reflect.ValueOf(row)
-	for j := 0; j < structVal.NumField(); j++ {
-		fieldName := structVal.Type().Field(j).Name
-		df.Columns[fieldName] = append(df.Columns[fieldName], structVal.Field(j).Interface())
+	chunkID := id / chunkSize
+	if df.cache[chunkID] == nil {
+		df.cache[chunkID] = make(map[int]interface{})
 	}
 
-	rowChunkIndex := id / df.rowChunkSize
-	df.Index.Insert(id, rowChunkIndex, 0) // Insert the key into the BPlusTree
+	df.cache[chunkID][id] = row
+	df.cacheSize += int(reflect.TypeOf(row).Size())
 
-	if df.storageOnDisk {
-		df.SaveRowChunkToDisk(rowChunkIndex)
-	} else {
-		df.InsertRowChunk(rowChunkIndex) // Use in-memory storage
+	if df.cacheSize >= maxCacheSize {
+		df.flushCache()
 	}
+
+	treeIndex := id % df.numTrees
+	df.Indexes[treeIndex].Insert(id) // Insert the key into the appropriate BPlusTree
 }
 
-func (df *DataFrame) InsertRowChunk(chunkIndex int) {
-	if df.inMemoryChunks == nil {
-		df.inMemoryChunks = make(map[int]map[string][]interface{})
-	}
-	chunk := make(map[string][]interface{})
-	for colName, colData := range df.Columns {
-		start := chunkIndex * df.rowChunkSize
-		end := start + df.rowChunkSize
-		if end > len(colData) {
-			end = len(colData)
-		}
-		chunk[colName] = colData[start:end]
-	}
-	df.inMemoryChunks[chunkIndex] = chunk // Store the chunk in-memory
-}
-
-func (df *DataFrame) ReadRow(id int) (map[string]interface{}, error) {
+func (df *DataFrame) ReadRow(id int) (interface{}, error) {
 	df.mutex.RLock()
 	defer df.mutex.RUnlock()
-	chunkIndices, found := df.Index.Search(id) // Search for the key in the BPlusTree
-	if !found {
-		return nil, fmt.Errorf("row with ID %d not found", id)
+
+	treeIndex := id % df.numTrees
+	if !df.Indexes[treeIndex].Search(id) {
+		return nil, fmt.Errorf("row with id %d not found", id)
 	}
 
-	rowChunkIndex := chunkIndices[0]
-
-	if df.storageOnDisk {
-		if err := df.LoadRowChunkFromDisk(rowChunkIndex); err != nil {
-			return nil, err
+	chunkID := id / chunkSize
+	if chunk, exists := df.cache[chunkID]; exists {
+		if row, exists := chunk[id]; exists {
+			return row, nil
 		}
-	} else {
-		df.LoadRowChunk(rowChunkIndex) // Use in-memory loading
 	}
 
-	row := make(map[string]interface{})
-	for colName, colData := range df.Columns {
-		row[colName] = colData[id]
+	chunkFile := filepath.Join(df.chunkDir, fmt.Sprintf("chunk_%d.gob", chunkID))
+	chunk, err := df.readChunk(chunkFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reading chunk file %s: %v", chunkFile, err)
+	}
+
+	row, exists := chunk[id]
+	if !exists {
+		return nil, fmt.Errorf("row with id %d not found", id)
 	}
 	return row, nil
 }
 
-func (df *DataFrame) LoadRowChunk(chunkIndex int) error {
-	chunk, exists := df.inMemoryChunks[chunkIndex]
-	if !exists {
-		return fmt.Errorf("chunk %d not found", chunkIndex)
+func (df *DataFrame) flushCache() {
+	for chunkID, chunk := range df.cache {
+		chunkFile := filepath.Join(df.chunkDir, fmt.Sprintf("chunk_%d.gob", chunkID))
+		existingChunk, err := df.readChunk(chunkFile)
+		if err == nil {
+			for id, row := range chunk {
+				existingChunk[id] = row
+			}
+		} else {
+			existingChunk = chunk
+		}
+		df.writeChunk(chunkFile, existingChunk)
 	}
-	for colName, colData := range chunk {
-		df.Columns[colName] = append(df.Columns[colName][:chunkIndex*df.rowChunkSize], colData...)
-	}
-	return nil
+	df.cache = make(map[int]map[int]interface{})
+	df.cacheSize = 0
 }
 
-func (df *DataFrame) SaveChunksToDisk() error {
-	for i := 0; i < len(df.Columns[df.StructType.Field(0).Name]); i += df.rowChunkSize {
-		if err := df.SaveRowChunkToDisk(i / df.rowChunkSize); err != nil {
-			return err
-		}
-	}
-	for i := 0; i < len(df.StructType.Field(0).Name); i += df.columnChunkSize {
-		if err := df.SaveColumnChunkToDisk(i / df.columnChunkSize); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (df *DataFrame) SaveRowChunkToDisk(chunkIndex int) error {
-	// Ensure the directory exists
-	if err := os.MkdirAll(df.filePath, os.ModePerm); err != nil {
-		return err
-	}
-
-	filePath := filepath.Join(df.filePath, fmt.Sprintf("row_chunk_%d.gob", chunkIndex))
-	file, err := os.Create(filePath)
+func (df *DataFrame) writeChunk(filename string, chunk map[int]interface{}) error {
+	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-
-	chunk := make(map[string][]interface{})
-	for colName, colData := range df.Columns {
-		start := chunkIndex * df.rowChunkSize
-		end := start + df.rowChunkSize
-		if end > len(colData) {
-			end = len(colData)
-		}
-		chunk[colName] = colData[start:end]
-	}
 
 	encoder := gob.NewEncoder(file)
 	if err := encoder.Encode(chunk); err != nil {
 		return err
 	}
-
-	df.rowChunks[chunkIndex] = filePath
 	return nil
 }
 
-func (df *DataFrame) SaveColumnChunkToDisk(chunkIndex int) error {
-	// Ensure the directory exists
-	if err := os.MkdirAll(df.filePath, os.ModePerm); err != nil {
-		return err
-	}
-
-	filePath := filepath.Join(df.filePath, fmt.Sprintf("column_chunk_%d.gob", chunkIndex))
-	file, err := os.Create(filePath)
+func (df *DataFrame) readChunk(filename string) (map[int]interface{}, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer file.Close()
 
-	chunk := make(map[string][]interface{})
-	for colName, colData := range df.Columns {
-		if chunkIndex*df.columnChunkSize < len(colData) {
-			chunk[colName] = colData[chunkIndex*df.columnChunkSize : (chunkIndex+1)*df.columnChunkSize]
-		}
-	}
-
-	encoder := gob.NewEncoder(file)
-	if err := encoder.Encode(chunk); err != nil {
-		return err
-	}
-
-	df.columnChunks[chunkIndex] = filePath
-	return nil
-}
-
-func (df *DataFrame) LoadRowChunkFromDisk(chunkIndex int) error {
-	filePath, exists := df.rowChunks[chunkIndex]
-	if (!exists) {
-		return fmt.Errorf("row chunk %d not found", chunkIndex)
-	}
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	chunk := make(map[string][]interface{})
+	var chunk map[int]interface{}
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&chunk); err != nil {
-		return err
+		return nil, err
 	}
-
-	for colName, colData := range chunk {
-		df.Columns[colName] = append(df.Columns[colName][:chunkIndex*df.rowChunkSize], colData...)
-	}
-
-	return nil
+	return chunk, nil
 }
 
-func (df *DataFrame) LoadColumnChunkFromDisk(chunkIndex int) error {
-	filePath, exists := df.columnChunks[chunkIndex]
-	if !exists {
-		return fmt.Errorf("column chunk %d not found", chunkIndex)
-	}
+// Close deletes all the disk caches and writes B+Trees to the data directory.
+func (df *DataFrame) Close() {
+	df.mutex.Lock()
+	defer df.mutex.Unlock()
 
-	file, err := os.Open(filePath)
+	// Remove all chunk files
+	err := os.RemoveAll(df.chunkDir)
 	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	chunk := make(map[string][]interface{})
-	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&chunk); err != nil {
-		return err
+		fmt.Printf("Error deleting chunk directory %s: %v\n", df.chunkDir, err)
 	}
 
-	for colName, colData := range chunk {
-		df.Columns[colName] = append(df.Columns[colName][:chunkIndex*df.columnChunkSize], colData...)
+	// Recreate the chunk directory
+	if err := os.MkdirAll(df.chunkDir, os.ModePerm); err != nil {
+		fmt.Printf("Failed to recreate chunk directory: %v\n", err)
+		return
 	}
 
-	return nil
+	//// Write each B+Tree to a file in the data directory
+	//for i, tree := range df.Indexes {
+	//	treeFile := filepath.Join(df.chunkDir, fmt.Sprintf("bplustree_%d.gob", i))
+	//	file, err := os.Create(treeFile)
+	//	fmt.Println("Writing B+Tree to file:", treeFile)
+	//	if err != nil {
+	//		fmt.Printf("Error creating B+Tree file %s: %v\n", treeFile, err)
+	//		continue
+	//	}
+	//	defer file.Close()
+	//
+	//	encoder := gob.NewEncoder(file)
+	//	if err := encoder.Encode(tree); err != nil {
+	//		fmt.Printf("Error encoding B+Tree to file %s: %v\n", treeFile, err)
+	//	}
+	//}
 }
